@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>リアルタイムメモアプリ</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            background-color: white;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .controls {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .controls>* {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        #editor {
+            flex: 1;
+            padding: 7px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            overflow-y: auto;
+            position: relative;
+            height: 100%;
+        }
+
+        .cursor {
+            position: absolute;
+            width: 2px;
+            height: 20px;
+            background-color: #ff0000;
+            pointer-events: none;
+        }
+
+        .cursor::after {
+            content: attr(data-name);
+            position: absolute;
+            top: -20px;
+            left: 0;
+            background-color: #ff0000;
+            color: white;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+
+        .share-link {
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
+        .users-list {
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+
+        .format-button {
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .format-button:hover {
+            background-color: #e9ecef;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="users-list">
+            接続中のユーザー: <span id="activeUsers"></span>
+        </div>
+        <div class="controls">
+            <button onclick="formatSelection('fontSize', document.getElementById('fontSize').value)"
+                class="format-button">
+                文字サイズを適用
+            </button>
+            <select id="fontSize">
+                <option value="12px">12px</option>
+                <option value="14px">14px</option>
+                <option value="16px" selected>16px</option>
+                <option value="18px">18px</option>
+                <option value="20px">20px</option>
+            </select>
+
+            <button onclick="formatSelection('color', document.getElementById('textColor').value)"
+                class="format-button">
+                文字色を適用
+            </button>
+            <input type="color" id="textColor" value="#000000">
+
+            <button onclick="formatSelection('backgroundColor', document.getElementById('bgColor').value)"
+                class="format-button">
+                背景色を適用
+            </button>
+            <input type="color" id="bgColor" value="#ffffff">
+
+            <button onclick="formatSelection('bold')" class="format-button">
+                太字
+            </button>
+        </div>
+        <div id="editor" contenteditable="true"></div>
+        <div class="share-link">
+            共有リンク: <span id="shareUrl"></span>
+        </div>
+    </div>
+
+    <script>
+        let ws;
+        let memoId;
+        let isProcessing = false;
+        let cursorPositions = {};
+        let lastContent = '';
+
+        async function init() {
+            const urlParams = new URLSearchParams(window.location.search);
+            memoId = urlParams.get('id');
+
+            if (!memoId) {
+                const response = await fetch('/new');
+                const data = await response.json();
+                memoId = data.memo_id;
+                window.history.pushState({}, '', `?id=${memoId}`);
+            }
+
+            document.getElementById('shareUrl').textContent = window.location.href;
+            connectWebSocket();
+        }
+
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws/${memoId}`);
+
+            ws.onmessage = function (event) {
+                const data = JSON.parse(event.data);
+
+                switch (data.type) {
+                    case 'init':
+                        document.getElementById('editor').innerHTML = data.content;
+                        lastContent = data.content;
+                        break;
+
+                    case 'content':
+                        if (!isProcessing && data.content !== lastContent) { 
+                            document.getElementById('editor').innerHTML = data.content;
+                            lastContent = data.content; 
+                            Object.entries(cursorPositions).forEach(([userId, data]) => {
+                                updateCursor(userId, data.position, data.name);
+                            });
+                        }
+                        break;
+
+                    case 'cursor':
+                        cursorPositions[data.user_id] = {
+                            position: data.position,
+                            name: data.name
+                        };
+                        updateCursor(data.user_id, data.position, data.name);
+                        break;
+
+                    case 'users':
+                        updateUsersList(data.users);
+                        break;
+                }
+            };
+
+            ws.onclose = function () {
+                setTimeout(connectWebSocket, 1000);
+            };
+        }
+
+        function updateUsersList(users) {
+            const usersList = Object.values(users).join(', ');
+            document.getElementById('activeUsers').textContent = usersList;
+        }
+
+        function updateCursor(userId, position, name) {
+            let cursor = document.getElementById(`cursor-${userId}`);
+            if (!cursor) {
+                cursor = document.createElement('div');
+                cursor.id = `cursor-${userId}`;
+                cursor.className = 'cursor';
+                document.getElementById('editor').appendChild(cursor);
+            }
+
+            const editor = document.getElementById('editor');
+            const range = document.createRange();
+            const sel = window.getSelection();
+
+            try {
+                if (position >= 0 && position <= editor.textContent.length) {
+                    let currentNode = editor.firstChild;
+                    let currentPos = 0;
+
+                    while (currentNode) {
+                        if (currentNode.nodeType === Node.TEXT_NODE) {
+                            if (currentPos + currentNode.length >= position) {
+                                range.setStart(currentNode, position - currentPos);
+                                const rect = range.getBoundingClientRect();
+                                const editorRect = editor.getBoundingClientRect();
+
+                                cursor.style.left = (rect.left - editorRect.left) + 'px';
+                                cursor.style.top = (rect.top - editorRect.top) + 'px';
+                                cursor.setAttribute('data-name', name);
+                                break;
+                            }
+                            currentPos += currentNode.length;
+                        }
+                        currentNode = getNextNode(currentNode);
+                    }
+                }
+            } catch (e) {
+                console.error('Error updating cursor position:', e);
+            }
+        }
+
+        function getNextNode(node) {
+            if (node.firstChild) return node.firstChild;
+            while (node) {
+                if (node.nextSibling) return node.nextSibling;
+                node = node.parentNode;
+            }
+            return null;
+        }
+
+        function formatSelection(style, value) {
+            const selection = window.getSelection();
+            if (!selection.rangeCount) return;
+
+            const range = selection.getRangeAt(0);
+            const span = document.createElement('span');
+
+            if (style === 'bold') {
+                span.style.fontWeight = 'bold';
+            } else {
+                span.style[style] = value;
+            }
+
+            const contents = range.extractContents();
+            span.appendChild(contents);
+            range.insertNode(span);
+
+            const spans = document.getElementById('editor').getElementsByTagName('span');
+            for (let i = spans.length - 1; i >= 0; i--) {
+                const span = spans[i];
+                if (!span.textContent.trim()) {
+                    span.parentNode.removeChild(span);
+                }
+            }
+
+            sendContent();
+        }
+
+        let sendTimeout;
+        function sendContent() {
+            mouseup();
+            isProcessing = true;
+            clearTimeout(sendTimeout);
+
+            sendTimeout = setTimeout(() => {
+                const currentContent = document.getElementById('editor').innerHTML;
+                if (ws && ws.readyState === WebSocket.OPEN && currentContent !== lastContent) {
+                    lastContent = currentContent; // 送信前に現在のコンテンツを保存
+                    ws.send(JSON.stringify({
+                        type: 'content',
+                        content: currentContent
+                    }));
+                }
+                isProcessing = false;
+            }, 100);
+        }
+
+        document.getElementById('editor').addEventListener('input', sendContent);
+
+        document.getElementById('editor').addEventListener('mouseup', mouseup);
+
+        document.getElementById('editor').addEventListener('keydown', mouseup);
+
+        //document.getElementById('editor').addEventListener('blur', () => {
+        //});
+
+        function mouseup() {
+            const selection = window.getSelection();
+            if (selection.rangeCount > 0) {
+                const range = selection.getRangeAt(0);
+                const position = getTextPosition(range.startContainer, range.startOffset);
+
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'cursor',
+                        position: position
+                    }));
+                }
+            }
+        }
+
+        function getTextPosition(node, offset) {
+            const editor = document.getElementById('editor');
+            let position = 0;
+            const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+
+            let currentNode = walker.nextNode();
+            while (currentNode) {
+                if (currentNode === node) {
+                    return position + offset;
+                }
+                position += currentNode.length;
+                currentNode = walker.nextNode();
+            }
+
+            return position;
+        }
+
+        init();
+    </script>
+</body>
+
+</html>
