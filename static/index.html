@@ -14,10 +14,7 @@
             接続中のユーザー: <span id="activeUsers"></span>
         </div>
         <div class="controls">
-            <button onclick="formatSelection('fontSize', document.getElementById('fontSize').value)"
-                class="format-button">
-                文字サイズを適用
-            </button>
+            <label for="fontSize">文字サイズ:</label>
             <select id="fontSize">
                 <option value="12px">12px</option>
                 <option value="14px">14px</option>
@@ -26,16 +23,10 @@
                 <option value="20px">20px</option>
             </select>
 
-            <button onclick="formatSelection('color', document.getElementById('textColor').value)"
-                class="format-button">
-                文字色を適用
-            </button>
+            <label for="textColor">文字色:</label>
             <input type="color" id="textColor" value="#000000">
 
-            <button onclick="formatSelection('backgroundColor', document.getElementById('bgColor').value)"
-                class="format-button">
-                背景色を適用
-            </button>
+            <label for="bgColor">背景色:</label>
             <input type="color" id="bgColor" value="#ffffff">
 
             <button onclick="formatSelection('bold')" class="format-button">
@@ -73,6 +64,49 @@
         let cursorPositions = {};
         let lastContent = '';
         let connection_count = 0
+
+        document.addEventListener("DOMContentLoaded", () => {
+            const editor = document.getElementById('editor');
+
+            // 文字サイズの変更
+            document.getElementById('fontSize').addEventListener('change', (event) => {
+                applyStyle('fontSize', event.target.value);
+            });
+
+            // 文字色の変更
+            document.getElementById('textColor').addEventListener('input', (event) => {
+                applyStyle('color', event.target.value);
+            });
+
+            // 背景色の変更
+            document.getElementById('bgColor').addEventListener('input', (event) => {
+                applyStyle('backgroundColor', event.target.value);
+            });
+
+            init();
+        });
+
+        function applyStyle(style, value) {
+            const selection = window.getSelection();
+            if (!selection.rangeCount) return;
+
+            const range = selection.getRangeAt(0);
+            const span = document.createElement('span');
+            span.style[style] = value;
+
+            const contents = range.extractContents();
+            span.appendChild(contents);
+            range.insertNode(span);
+
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            const newRange = document.createRange();
+            newRange.selectNodeContents(span);
+            newRange.collapse(false);
+            sel.addRange(newRange);
+
+            sendContent();
+        }
 
         async function init() {
             const urlParams = new URLSearchParams(window.location.search);
@@ -282,8 +316,6 @@
             }
             return position;
         }
-
-        init();
 
         function copyAll() {
             const allText = document.getElementById('editor').innerText;
