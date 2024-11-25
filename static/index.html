@@ -5,96 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>リアルタイムメモアプリ</title>
-    <style>
-        body {
-            font-family: 'Helvetica Neue', Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f5f5f5;
-            height: 100vh;
-            overflow: hidden;
-        }
-
-        .container {
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            background-color: white;
-            padding: 20px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-
-        .controls {
-            margin-bottom: 20px;
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-
-        .controls>* {
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-
-        #editor {
-            flex: 1;
-            padding: 7px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            overflow-y: auto;
-            position: relative;
-            height: 100%;
-        }
-
-        .cursor {
-            position: absolute;
-            width: 2px;
-            height: 20px;
-            background-color: #ff0000;
-            pointer-events: none;
-        }
-
-        .cursor::after {
-            content: attr(data-name);
-            position: absolute;
-            top: -20px;
-            left: 0;
-            background-color: #ff0000;
-            color: white;
-            padding: 2px 5px;
-            border-radius: 3px;
-            font-size: 12px;
-            white-space: nowrap;
-        }
-
-        .share-link {
-            padding: 10px;
-            background-color: #f8f9fa;
-            border-radius: 4px;
-            margin-top: 10px;
-        }
-
-        .users-list {
-            margin-bottom: 10px;
-            padding: 10px;
-            background-color: #f8f9fa;
-            border-radius: 4px;
-        }
-
-        .format-button {
-            background-color: #f8f9fa;
-            border: 1px solid #ddd;
-            padding: 5px 10px;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-
-        .format-button:hover {
-            background-color: #e9ecef;
-        }
-    </style>
+    <link rel="stylesheet" href="static/main.css">
 </head>
 
 <body>
@@ -133,10 +44,27 @@
         </div>
         <div id="editor" contenteditable="true"></div>
         <div class="share-link">
-            共有リンク: <span id="shareUrl"></span>
+            <button onclick="copyAll()" class="format-button">全てをコピー</button>
+            <button onclick="openModal()" class="format-button">共有</button>
         </div>
-    </div>
-
+        
+        <div class="modal micromodal-slide" id="modal-1" aria-hidden="true">
+            <div class="modal__overlay" tabindex="-1" data-micromodal-close>
+            <div class="modal__container" role="dialog" aria-modal="true" aria-labelledby="modal-1-title" style="text-align: center;">
+                <main class="modal__content" id="modal-1-content">
+                    共有リンク: <span id="shareUrl"></span>
+                    <div id="qrcode"></div>
+                </main>
+                <footer class="modal__footer">
+                    <button class="modal__btn" data-micromodal-close aria-label="Close this dialog window">閉じる</button>
+                </footer>
+            </div>
+            </div>
+        </div>
+    
+    <link rel="stylesheet" href="static/modal.css">
+    <script src="https://unpkg.com/micromodal/dist/micromodal.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
     <script>
         let ws;
         let memoId;
@@ -197,7 +125,15 @@
             };
 
             ws.onclose = function () {
-                setTimeout(connectWebSocket, 1000);
+                
+                setTimeout(() => {
+                    alert('接続が切断されました。再接続します。');
+                    connectWebSocket();
+                }, 1000);
+            };
+
+            ws.onerror = function() {
+                alert('接続エラーが発生しました。ページを再読み込みしてください。');
             };
         }
 
@@ -339,11 +275,29 @@
                 position += currentNode.length;
                 currentNode = walker.nextNode();
             }
-
             return position;
         }
 
         init();
+
+        function copyAll() {
+            const allText = document.getElementById('editor').innerText;
+            navigator.clipboard.writeText(allText);
+        }
+
+        function openModal() {
+            const url = document.getElementById('shareUrl').textContent;
+            const qrcodeElement = document.getElementById('qrcode');
+            qrcodeElement.innerHTML = '';
+            
+            const qr = qrcode(0, 'M'); 
+            qr.addData(url);
+            qr.make();
+            qrcodeElement.innerHTML = qr.createImgTag(8);
+            
+            MicroModal.show('modal-1');
+        }
+
     </script>
 </body>
 
