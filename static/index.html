@@ -72,6 +72,7 @@
         let isProcessing = false;
         let cursorPositions = {};
         let lastContent = '';
+        let connection_count = 0
 
         async function init() {
             const urlParams = new URLSearchParams(window.location.search);
@@ -120,6 +121,7 @@
                         break;
 
                     case 'users':
+                        connection_count = Object.keys(data.users).length;
                         updateUsersList(data.users);
                         break;
                 }
@@ -249,16 +251,18 @@
         //});
 
         function mouseup() {
-            const selection = window.getSelection();
-            if (selection.rangeCount > 0) {
-                const range = selection.getRangeAt(0);
-                const position = getTextPosition(range.startContainer, range.startOffset);
+            if(connection_count!=1){
+                const selection = window.getSelection();
+                if (selection.rangeCount > 0) {
+                    const range = selection.getRangeAt(0);
+                    const position = getTextPosition(range.startContainer, range.startOffset);
 
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({
-                        type: 'cursor',
-                        position: position
-                    }));
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'cursor',
+                            position: position
+                        }));
+                    }
                 }
             }
         }
