@@ -90,3 +90,30 @@ body {
 .format-button:hover {
     background-color: #e9ecef;
 }
+
+.diff-container {
+    border: 1px solid #ccc;
+    padding: 10px;
+    background-color: #f9f9f9;
+    white-space: pre-wrap;
+    font-family: monospace;
+}
+
+.added {
+    background-color: #e6ffed;
+}
+
+.removed {
+    background-color: #ffeef0;
+}
+
+.line {
+    display: flex;
+}
+
+.line-number {
+    width: 30px;
+    text-align: right;
+    padding-right: 10px;
+    color: #6a737d;
+}
