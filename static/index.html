@@ -48,7 +48,7 @@
             </button>
         </div>
             
-        <div id="editor" contenteditable="true"></div>
+        <div id="editor" contenteditable="true" onpaste="handlePaste(event)"></div>
 
         <div class="share-link">
             <button onclick="copyAll()" class="format-button">全てをコピー</button>
@@ -146,6 +146,15 @@
 
             document.getElementById('shareUrl').textContent = window.location.href;
             connectWebSocket();
+        }
+
+        function handlePaste(event) {
+            event.preventDefault();
+            const text = event.clipboardData.getData('text/plain');
+            const plainText = text.replace(/<\/?[^>]+(>|$)/g, ""); // HTMLタグを削除
+            const lines = plainText.split('\n'); // 改行で分割
+            const formattedText = lines.join('<br>'); // 改行を<br>に変換
+            document.execCommand('insertHTML', false, formattedText);
         }
 
         function connectWebSocket() {
@@ -394,38 +403,26 @@
         function showDiff(newText) {
             const oldText = document.getElementById('editor').innerHTML;
 
-            const diff = Diff.diffLines(oldText, newText);
+            const diff = Diff.diffWords(oldText, newText);
 
             const diffResult = document.getElementById('editor');
             diffResult.innerHTML = '';
 
             diff.forEach(part => {
-                const lines = part.value.split('\n');
-                lines.forEach((line, index) => {
-                    if (line === '' && index === lines.length - 1) return;
+                const words = part.value.split(' ');
+                words.forEach((word, index) => {
+                    if (word === '' && index === words.length - 1) return;
 
-                    const div = document.createElement('div');
-                    div.classList.add('line');
-
-                    const lineNumber = document.createElement('span');
-                    lineNumber.classList.add('line-number');
-
-                    const textSpan = document.createElement('span');
+                    const span = document.createElement('span');
 
                     if (part.added) {
-                        lineNumber.textContent = '+';
-                        textSpan.classList.add('added');
+                        span.classList.add('added');
                     } else if (part.removed) {
-                        lineNumber.textContent = '-';
-                        textSpan.classList.add('removed');
-                    } else {
-                        lineNumber.textContent = ' ';
+                        span.classList.add('removed');
                     }
 
-                    textSpan.textContent = line;
-                    div.appendChild(lineNumber);
-                    div.appendChild(textSpan);
-                    diffResult.appendChild(div);
+                    span.textContent = word + ' ';
+                    diffResult.appendChild(span);
                 });
             });
         }
