@@ -104,6 +104,7 @@ body {
 }
 
 .removed {
+    text-decoration: line-through;
     background-color: #ffeef0;
 }
 
