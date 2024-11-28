@@ -82,6 +82,11 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                 "type": "init",
                 "content": memos[memo_id]["content"]
             })
+        else:
+            await websocket.send_json({
+                "type": "error",
+                "status":"notfound"
+            })
         
         while True:
             data = await websocket.receive_text()

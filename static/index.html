@@ -178,6 +178,12 @@
                             lastContent = data.content;
                             break;
 
+                        case 'error':
+                            if("notfound"==data.status){
+                                window.location.href = '/';
+                            }
+                            break;
+
                         case 'content':
                             if (!isProcessing && data.content !== lastContent) { 
                                 document.getElementById('editor').innerHTML = data.content;
