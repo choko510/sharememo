@@ -514,9 +514,9 @@
                 const editor = document.getElementById('editor');
                 editor.innerHTML = newText;
                 editor.contentEditable = true;
+                document.getElementById("aibutton").disabled = false;
                 document.getElementById('diff-buttons').style.display = 'none';
                 
-                // サーバーに変更を送信
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
                         type: 'content',
@@ -524,7 +524,6 @@
                     }));
                 }
                 
-                // クラスを削除
                 const elements = editor.getElementsByTagName('*');
                 for (let element of elements) {
                     element.classList.remove('added', 'removed');
@@ -538,6 +537,7 @@
                 const editor = document.getElementById('editor');
                 editor.innerHTML = oldText;
                 editor.contentEditable = true;
+                document.getElementById("aibutton").disabled = false;
                 document.getElementById('diff-buttons').style.display = 'none';
             }
         </script>
