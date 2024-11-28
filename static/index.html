@@ -233,14 +233,22 @@
 
         function updateCursor(userId, position, name) {
             let cursor = document.getElementById(`cursor-${userId}`);
+            const editor = document.getElementById('editor');
+
+            if (position === -1) {
+                if (cursor) {
+                    cursor.remove();
+                }
+                return;
+            }
+
             if (!cursor) {
                 cursor = document.createElement('div');
                 cursor.id = `cursor-${userId}`;
                 cursor.className = 'cursor';
-                document.getElementById('editor').appendChild(cursor);
+                editor.appendChild(cursor);
             }
 
-            const editor = document.getElementById('editor');
             const range = document.createRange();
             const sel = window.getSelection();
 
@@ -310,6 +318,8 @@
             sendContent();
         }
 
+        document.getElementById('editor').addEventListener('input', sendContent);
+
         let sendTimeout;
         function sendContent() {
             mouseup();
@@ -328,8 +338,6 @@
                 isProcessing = false;
             }, 100);
         }
-
-        document.getElementById('editor').addEventListener('input', sendContent);
 
         document.getElementById('editor').addEventListener('mouseup', mouseup);
 
@@ -350,6 +358,19 @@
                     }
                 }
 
+            }
+        }
+
+        document.getElementById('editor').addEventListener('blur', mousedel);
+
+        function mousedel() {
+            if(connection_count!=1){
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'cursor',
+                        position: -1
+                    }));
+                }
             }
         }
 
