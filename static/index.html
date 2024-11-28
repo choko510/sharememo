@@ -1,70 +1,72 @@
 <!DOCTYPE html>
 <html lang="ja">
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>リアルタイムメモアプリ</title>
-    <link rel="stylesheet" href="static/main.css">
-</head>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>リアルタイムメモアプリ</title>
+        <link rel="stylesheet" href="static/main.css">
+    </head>
 
-<body>
-    <div class="container">
-        <div class="users-list">
-            接続中のユーザー: <span id="activeUsers"></span>
+    <body>
+        <div class="container">
+
+            <div class="users-list">
+                接続中のユーザー: <span id="activeUsers"></span>
+            </div>
+
+            <div class="controls">
+
+                <label for="fontSize">文字サイズ:
+                    <select id="fontSize">
+                        <option value="8px">8px</option>
+                        <option value="10px">10px</option>
+                        <option value="12px">12px</option>
+                        <option value="14px">14px</option>
+                        <option value="16px" selected>16px</option>
+                        <option value="18px">18px</option>
+                        <option value="20px">20px</option>
+                        <option value="22px">22px</option>
+                        <option value="24px">24px</option>
+                        <option value="26px">26px</option>
+                        <option value="28px">28px</option>
+                    </select>
+                </label>
+
+                <label for="textColor">文字色
+                    <input type="color" id="textColor" value="#000000">
+                </label>
+
+                <label for="bgColor">背景色
+                    <input type="color" id="bgColor" value="#ffffff">
+                </label>
+
+                <button onclick="formatSelection('bold')" class="format-button">
+                    太字
+                </button>
+
+                <button onclick="formatSelection('strike')" class="format-button">
+                    取り消し線
+                </button>
+
+                <button onclick="AIrewrite()" class="format-button">
+                    AI添削
+                </button>
+            </div>
+
+            <div id="diff-buttons" style="display:none">
+                    <button onclick="acceptDiff()" class="format-button">了承</button>
+                    <button onclick="cancelDiff()" class="format-button">キャンセル</button>
+            </div>
+            
+            <div id="editor" contenteditable="true" onpaste="handlePaste(event)"></div>
+
+            <div class="share-link">
+                <button onclick="copyAll()" class="format-button">全てをコピー</button>
+                <button onclick="openModal()" class="format-button">共有</button>
+            </div>
+            
         </div>
-        <div class="controls">
-
-            <label for="fontSize">文字サイズ:
-                <select id="fontSize">
-                    <option value="8px">8px</option>
-                    <option value="10px">10px</option>
-                    <option value="12px">12px</option>
-                    <option value="14px">14px</option>
-                    <option value="16px" selected>16px</option>
-                    <option value="18px">18px</option>
-                    <option value="20px">20px</option>
-                    <option value="22px">22px</option>
-                    <option value="24px">24px</option>
-                    <option value="26px">26px</option>
-                    <option value="28px">28px</option>
-                </select>
-            </label>
-
-            <label for="textColor">文字色
-                        <input type="color" id="textColor" value="#000000">
-            </label>
-
-            <label for="bgColor">背景色
-                        <input type="color" id="bgColor" value="#ffffff">
-            </label>
-
-            <button onclick="formatSelection('bold')" class="format-button">
-                太字
-            </button>
-
-            <button onclick="formatSelection('strike')" class="format-button">
-                取り消し線
-            </button>
-
-            <button onclick="AIrewrite()" class="format-button">
-                AI添削
-            </button>
-        </div>
-
-        <div id="diff-buttons" style="display:none">
-                <button onclick="acceptDiff()" class="format-button">了承</button>
-                <button onclick="cancelDiff()" class="format-button">キャンセル</button>
-        </div>
-        
-        <div id="editor" contenteditable="true" onpaste="handlePaste(event)"></div>
-
-        <div class="share-link">
-            <button onclick="copyAll()" class="format-button">全てをコピー</button>
-            <button onclick="openModal()" class="format-button">共有</button>
-        </div>
-        
-    </div>
 
         <div class="modal micromodal-slide" id="modal-1" aria-hidden="true">
             <div class="modal__overlay" tabindex="-1" data-micromodal-close>
@@ -81,413 +83,412 @@
             </div>
             </div>
         </div>
-    
-    <link rel="stylesheet" href="static/modal.css">
-    <script src="https://cdn.jsdelivr.net/npm/micromodal@0.4.10/dist/micromodal.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/diff@7.0.0/dist/diff.min.js"></script>
-    <script>
-        let ws;
-        let memoId;
-        let isProcessing = false;
-        let cursorPositions = {};
-        let lastContent = '';
-        let connection_count = 0;
-        let oldText = '';
-        let newText = '';
+        
+        <link rel="stylesheet" href="static/modal.css">
+        <script src="https://cdn.jsdelivr.net/npm/micromodal@0.4.10/dist/micromodal.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/diff@7.0.0/dist/diff.min.js"></script>
+        <script>
+            let ws;
+            let memoId;
+            let isProcessing = false;
+            let cursorPositions = {};
+            let lastContent = '';
+            let connection_count = 0;
+            let oldText = '';
+            let newText = '';
 
-        document.addEventListener("DOMContentLoaded", () => {
-            const editor = document.getElementById('editor');
+            document.addEventListener("DOMContentLoaded", () => {
+                const editor = document.getElementById('editor');
 
-            // 文字サイズの変更
-            document.getElementById('fontSize').addEventListener('change', (event) => {
-                applyStyle('fontSize', event.target.value);
+                // 文字サイズの変更
+                document.getElementById('fontSize').addEventListener('change', (event) => {
+                    applyStyle('fontSize', event.target.value);
+                });
+
+                // 文字色の変更
+                document.getElementById('textColor').addEventListener('input', (event) => {
+                    applyStyle('color', event.target.value);
+                });
+
+                // 背景色の変更
+                document.getElementById('bgColor').addEventListener('input', (event) => {
+                    applyStyle('backgroundColor', event.target.value);
+                });
+
+                init();
             });
 
-            // 文字色の変更
-            document.getElementById('textColor').addEventListener('input', (event) => {
-                applyStyle('color', event.target.value);
-            });
+            function applyStyle(style, value) {
+                const selection = window.getSelection();
+                if (!selection.rangeCount) return;
 
-            // 背景色の変更
-            document.getElementById('bgColor').addEventListener('input', (event) => {
-                applyStyle('backgroundColor', event.target.value);
-            });
+                const range = selection.getRangeAt(0);
+                const span = document.createElement('span');
+                span.style[style] = value;
 
-            init();
-        });
+                const contents = range.extractContents();
+                span.appendChild(contents);
+                range.insertNode(span);
 
-        function applyStyle(style, value) {
-            const selection = window.getSelection();
-            if (!selection.rangeCount) return;
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                const newRange = document.createRange();
+                newRange.selectNodeContents(span);
+                newRange.collapse(false);
+                sel.addRange(newRange);
 
-            const range = selection.getRangeAt(0);
-            const span = document.createElement('span');
-            span.style[style] = value;
-
-            const contents = range.extractContents();
-            span.appendChild(contents);
-            range.insertNode(span);
-
-            const sel = window.getSelection();
-            sel.removeAllRanges();
-            const newRange = document.createRange();
-            newRange.selectNodeContents(span);
-            newRange.collapse(false);
-            sel.addRange(newRange);
-
-            sendContent();
-        }
-
-        async function init() {
-            const urlParams = new URLSearchParams(window.location.search);
-            memoId = urlParams.get('id');
-
-            if (!memoId) {
-                const response = await fetch('/new');
-                const data = await response.json();
-                memoId = data.memo_id;
-                window.history.pushState({}, '', `?id=${memoId}`);
+                sendContent();
             }
 
-            document.getElementById('shareUrl').textContent = window.location.href;
-            connectWebSocket();
-        }
+            async function init() {
+                const urlParams = new URLSearchParams(window.location.search);
+                memoId = urlParams.get('id');
 
-        function handlePaste(event) {
-            event.preventDefault();
-            const text = event.clipboardData.getData('text/plain');
-            const plainText = text.replace(/<\/?[^>]+(>|$)/g, ""); // HTMLタグを削除
-            const lines = plainText.split('\n'); // 改行で分割
-            const formattedText = lines.join('<br>'); // 改行を<br>に変換
-            document.execCommand('insertHTML', false, formattedText);
-        }
+                if (!memoId) {
+                    const response = await fetch('/new');
+                    const data = await response.json();
+                    memoId = data.memo_id;
+                    window.history.pushState({}, '', `?id=${memoId}`);
+                }
 
-        function connectWebSocket() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(`${protocol}//${window.location.host}/ws/${memoId}`);
+                document.getElementById('shareUrl').textContent = window.location.href;
+                connectWebSocket();
+            }
 
-            ws.onmessage = function (event) {
-                const data = JSON.parse(event.data);
+            function handlePaste(event) {
+                event.preventDefault();
+                const text = event.clipboardData.getData('text/plain');
+                const plainText = text.replace(/<\/?[^>]+(>|$)/g, ""); // HTMLタグを削除
+                const lines = plainText.split('\n'); // 改行で分割
+                const formattedText = lines.join('<br>'); // 改行を<br>に変換
+                document.execCommand('insertHTML', false, formattedText);
+            }
 
-                switch (data.type) {
-                    case 'init':
-                        document.getElementById('editor').innerHTML = data.content;
-                        lastContent = data.content;
-                        break;
+            function connectWebSocket() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                ws = new WebSocket(`${protocol}//${window.location.host}/ws/${memoId}`);
 
-                    case 'content':
-                        if (!isProcessing && data.content !== lastContent) { 
+                ws.onmessage = function (event) {
+                    const data = JSON.parse(event.data);
+
+                    switch (data.type) {
+                        case 'init':
                             document.getElementById('editor').innerHTML = data.content;
-                            lastContent = data.content; 
-                            Object.entries(cursorPositions).forEach(([userId, data]) => {
-                                updateCursor(userId, data.position, data.name);
-                            });
-                        }
-                        break;
+                            lastContent = data.content;
+                            break;
 
-                    case 'cursor':
-                        cursorPositions[data.user_id] = {
-                            position: data.position,
-                            name: data.name
-                        };
-                        updateCursor(data.user_id, data.position, data.name);
-                        break;
-
-                    case 'users':
-                        connection_count = Object.keys(data.users).length;
-                        updateUsersList(data.users);
-                        break;
-
-                    case 'rewrite':
-                        if (data.status == "stop"){
-                            document.getElementById('editor').contentEditable = false;
-                        }else if(data.status == "success"){
-                            console.log(data.content);
-                            oldText = document.getElementById('editor').innerHTML;
-                            newText = data.content;
-                            showDiff(data.content);
-                            document.getElementById('diff-buttons').style.display = 'block';
-                        }
-                        break;
-                }
-            };
-
-            ws.onclose = function () {
-                
-                setTimeout(() => {
-                    alert('接続が切断されました。再接続します。');
-                    connectWebSocket();
-                }, 1000);
-            };
-
-            ws.onerror = function() {
-                alert('接続エラーが発生しました。ページを再読み込みしてください。');
-            };
-        }
-
-        function updateUsersList(users) {
-            const usersList = Object.values(users).join(', ');
-            document.getElementById('activeUsers').textContent = usersList;
-        }
-
-        function updateCursor(userId, position, name) {
-            let cursor = document.getElementById(`cursor-${userId}`);
-            const editor = document.getElementById('editor');
-
-            if (position === -1) {
-                if (cursor) {
-                    cursor.remove();
-                }
-                return;
-            }
-
-            if (!cursor) {
-                cursor = document.createElement('div');
-                cursor.id = `cursor-${userId}`;
-                cursor.className = 'cursor';
-                editor.appendChild(cursor);
-            }
-
-            const range = document.createRange();
-            const sel = window.getSelection();
-
-            try {
-                if (position >= 0 && position <= editor.textContent.length) {
-                    let currentNode = editor.firstChild;
-                    let currentPos = 0;
-
-                    while (currentNode) {
-                        if (currentNode.nodeType === Node.TEXT_NODE) {
-                            if (currentPos + currentNode.length >= position) {
-                                range.setStart(currentNode, position - currentPos);
-                                const rect = range.getBoundingClientRect();
-                                const editorRect = editor.getBoundingClientRect();
-
-                                cursor.style.left = (rect.left - editorRect.left) + 'px';
-                                cursor.style.top = (rect.top - editorRect.top) + 'px';
-                                cursor.setAttribute('data-name', name);
-                                break;
+                        case 'content':
+                            if (!isProcessing && data.content !== lastContent) { 
+                                document.getElementById('editor').innerHTML = data.content;
+                                lastContent = data.content; 
+                                Object.entries(cursorPositions).forEach(([userId, data]) => {
+                                    updateCursor(userId, data.position, data.name);
+                                });
                             }
-                            currentPos += currentNode.length;
+                            break;
+
+                        case 'cursor':
+                            cursorPositions[data.user_id] = {
+                                position: data.position,
+                                name: data.name
+                            };
+                            updateCursor(data.user_id, data.position, data.name);
+                            break;
+
+                        case 'users':
+                            connection_count = Object.keys(data.users).length;
+                            updateUsersList(data.users);
+                            break;
+
+                        case 'rewrite':
+                            if (data.status == "stop"){
+                                document.getElementById('editor').contentEditable = false;
+                            }else if(data.status == "success"){
+                                console.log(data.content);
+                                oldText = document.getElementById('editor').innerHTML;
+                                newText = data.content;
+                                showDiff(data.content);
+                                document.getElementById('diff-buttons').style.display = 'block';
+                            }
+                            break;
+                    }
+                };
+
+                ws.onclose = function () {
+                    
+                    setTimeout(() => {
+                        alert('接続が切断されました。再接続します。');
+                        connectWebSocket();
+                    }, 1000);
+                };
+
+                ws.onerror = function() {
+                    alert('接続エラーが発生しました。ページを再読み込みしてください。');
+                };
+            }
+
+            function updateUsersList(users) {
+                const usersList = Object.values(users).join(', ');
+                document.getElementById('activeUsers').textContent = usersList;
+            }
+
+            function updateCursor(userId, position, name) {
+                let cursor = document.getElementById(`cursor-${userId}`);
+                const editor = document.getElementById('editor');
+
+                if (position === -1) {
+                    if (cursor) {
+                        cursor.remove();
+                    }
+                    return;
+                }
+
+                if (!cursor) {
+                    cursor = document.createElement('div');
+                    cursor.id = `cursor-${userId}`;
+                    cursor.className = 'cursor';
+                    editor.appendChild(cursor);
+                }
+
+                const range = document.createRange();
+                const sel = window.getSelection();
+
+                try {
+                    if (position >= 0 && position <= editor.textContent.length) {
+                        let currentNode = editor.firstChild;
+                        let currentPos = 0;
+
+                        while (currentNode) {
+                            if (currentNode.nodeType === Node.TEXT_NODE) {
+                                if (currentPos + currentNode.length >= position) {
+                                    range.setStart(currentNode, position - currentPos);
+                                    const rect = range.getBoundingClientRect();
+                                    const editorRect = editor.getBoundingClientRect();
+
+                                    cursor.style.left = (rect.left - editorRect.left) + 'px';
+                                    cursor.style.top = (rect.top - editorRect.top) + 'px';
+                                    cursor.setAttribute('data-name', name);
+                                    break;
+                                }
+                                currentPos += currentNode.length;
+                            }
+                            currentNode = getNextNode(currentNode);
                         }
-                        currentNode = getNextNode(currentNode);
+                    }
+                } catch (e) {
+                    console.error('Error updating cursor position:', e);
+                }
+            }
+
+            function getNextNode(node) {
+                if (node.firstChild) return node.firstChild;
+                while (node) {
+                    if (node.nextSibling) return node.nextSibling;
+                    node = node.parentNode;
+                }
+                return null;
+            }
+
+            function formatSelection(style, value) {
+                const selection = window.getSelection();
+                if (!selection.rangeCount) return;
+
+                const range = selection.getRangeAt(0);
+                const span = document.createElement('span');
+
+                if (style === 'bold') {
+                    span.style.fontWeight = 'bold';
+                } else if (style === 'strike') {
+                    span.style.textDecoration = 'line-through';
+                } else {
+                    span.style[style] = value;
+                }
+
+                const contents = range.extractContents();
+                span.appendChild(contents);
+                range.insertNode(span);
+
+                const spans = document.getElementById('editor').getElementsByTagName('span');
+                for (let i = spans.length - 1; i >= 0; i--) {
+                    const span = spans[i];
+                    if (!span.textContent.trim()) {
+                        span.parentNode.removeChild(span);
                     }
                 }
-            } catch (e) {
-                console.error('Error updating cursor position:', e);
-            }
-        }
 
-        function getNextNode(node) {
-            if (node.firstChild) return node.firstChild;
-            while (node) {
-                if (node.nextSibling) return node.nextSibling;
-                node = node.parentNode;
-            }
-            return null;
-        }
-
-        function formatSelection(style, value) {
-            const selection = window.getSelection();
-            if (!selection.rangeCount) return;
-
-            const range = selection.getRangeAt(0);
-            const span = document.createElement('span');
-
-            if (style === 'bold') {
-                span.style.fontWeight = 'bold';
-            } else if (style === 'strike') {
-                span.style.textDecoration = 'line-through';
-            } else {
-                span.style[style] = value;
+                sendContent();
             }
 
-            const contents = range.extractContents();
-            span.appendChild(contents);
-            range.insertNode(span);
+            document.getElementById('editor').addEventListener('input', sendContent);
 
-            const spans = document.getElementById('editor').getElementsByTagName('span');
-            for (let i = spans.length - 1; i >= 0; i--) {
-                const span = spans[i];
-                if (!span.textContent.trim()) {
-                    span.parentNode.removeChild(span);
+            let sendTimeout;
+            function sendContent() {
+                mouseup();
+                isProcessing = true;
+                clearTimeout(sendTimeout);
+
+                sendTimeout = setTimeout(() => {
+                    const currentContent = document.getElementById('editor').innerHTML;
+                    if (ws && ws.readyState === WebSocket.OPEN && currentContent !== lastContent) {
+                        lastContent = currentContent;
+                        ws.send(JSON.stringify({
+                            type: 'content',
+                            content: currentContent
+                        }));
+                    }
+                    isProcessing = false;
+                }, 100);
+            }
+
+            document.getElementById('editor').addEventListener('mouseup', mouseup);
+
+            document.getElementById('editor').addEventListener('keydown', mouseup);
+
+            function mouseup() {
+                if(connection_count!=1){
+                    const selection = window.getSelection();
+                    if (selection.rangeCount > 0) {
+                        const range = selection.getRangeAt(0);
+                        const position = getTextPosition(range.startContainer, range.startOffset);
+
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                type: 'cursor',
+                                position: position
+                            }));
+                        }
+                    }
+
                 }
             }
 
-            sendContent();
-        }
+            document.getElementById('editor').addEventListener('blur', mousedel);
 
-        document.getElementById('editor').addEventListener('input', sendContent);
-
-        let sendTimeout;
-        function sendContent() {
-            mouseup();
-            isProcessing = true;
-            clearTimeout(sendTimeout);
-
-            sendTimeout = setTimeout(() => {
-                const currentContent = document.getElementById('editor').innerHTML;
-                if (ws && ws.readyState === WebSocket.OPEN && currentContent !== lastContent) {
-                    lastContent = currentContent;
-                    ws.send(JSON.stringify({
-                        type: 'content',
-                        content: currentContent
-                    }));
-                }
-                isProcessing = false;
-            }, 100);
-        }
-
-        document.getElementById('editor').addEventListener('mouseup', mouseup);
-
-        document.getElementById('editor').addEventListener('keydown', mouseup);
-
-        function mouseup() {
-            if(connection_count!=1){
-                const selection = window.getSelection();
-                if (selection.rangeCount > 0) {
-                    const range = selection.getRangeAt(0);
-                    const position = getTextPosition(range.startContainer, range.startOffset);
-
+            function mousedel() {
+                if(connection_count!=1){
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({
                             type: 'cursor',
-                            position: position
+                            position: -1
                         }));
                     }
                 }
-
             }
-        }
 
-        document.getElementById('editor').addEventListener('blur', mousedel);
+            function getTextPosition(node, offset) {
+                const editor = document.getElementById('editor');
+                let position = 0;
+                const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
 
-        function mousedel() {
-            if(connection_count!=1){
+                let currentNode = walker.nextNode();
+                while (currentNode) {
+                    if (currentNode === node) {
+                        return position + offset;
+                    }
+                    position += currentNode.length;
+                    currentNode = walker.nextNode();
+                }
+                return position;
+            }
+
+            function copyAll() {
+                const allText = document.getElementById('editor').innerText;
+                navigator.clipboard.writeText(allText).then(() => {
+                    console.log("copy");
+                }).catch(err => {
+                    alert('コピーに失敗しました。');
+                    console.error('コピーエラー:', err);
+                });
+            }
+
+            function copyShareUrl() {
+                const url = document.getElementById('shareUrl').textContent;
+                navigator.clipboard.writeText(url).then(() => {
+                    alert('URLをコピーしました');
+                }).catch(err => {
+                    alert('コピーに失敗しました');
+                    console.error('コピーエラー:', err);
+                });
+            }
+
+            function openModal() {
+                const url = document.getElementById('shareUrl').textContent;
+                const qrcodeElement = document.getElementById('qrcode');
+                qrcodeElement.innerHTML = '';
+                
+                const qr = qrcode(0, 'M'); 
+                qr.addData(url);
+                qr.make();
+                qrcodeElement.innerHTML = qr.createImgTag(8);
+                
+                MicroModal.show('modal-1');
+            }
+
+            function AIrewrite() {
+                ws.send(JSON.stringify({
+                    type: 'rewrite'
+                }));
+                document.getElementById('editor').contentEditable = false;
+            }
+
+            function showDiff(newText) {
+                const oldText = document.getElementById('editor').innerHTML;
+
+                const diff = Diff.diffWords(oldText, newText);
+
+                const diffResult = document.getElementById('editor');
+                diffResult.innerHTML = '';
+
+                diff.forEach(part => {
+                    const words = part.value.split(' ');
+                    words.forEach((word, index) => {
+                        if (word === '' && index === words.length - 1) return;
+
+                        const span = document.createElement('span');
+
+                        if (part.added) {
+                            span.classList.add('added');
+                        } else if (part.removed) {
+                            span.classList.add('removed');
+                        }
+
+                        span.innerHTML = word + ' ';
+                        diffResult.appendChild(span);
+                    });
+                });
+            }
+
+            function acceptDiff() {
+                const editor = document.getElementById('editor');
+                editor.innerHTML = newText;
+                editor.contentEditable = true;
+                document.getElementById('diff-buttons').style.display = 'none';
+                
+                // サーバーに変更を送信
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
-                        type: 'cursor',
-                        position: -1
+                        type: 'content',
+                        content: newText
                     }));
                 }
-            }
-        }
-
-        function getTextPosition(node, offset) {
-            const editor = document.getElementById('editor');
-            let position = 0;
-            const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
-
-            let currentNode = walker.nextNode();
-            while (currentNode) {
-                if (currentNode === node) {
-                    return position + offset;
-                }
-                position += currentNode.length;
-                currentNode = walker.nextNode();
-            }
-            return position;
-        }
-
-        function copyAll() {
-            const allText = document.getElementById('editor').innerText;
-            navigator.clipboard.writeText(allText).then(() => {
-                console.log("copy");
-            }).catch(err => {
-                alert('コピーに失敗しました。');
-                console.error('コピーエラー:', err);
-            });
-        }
-
-        function copyShareUrl() {
-            const url = document.getElementById('shareUrl').textContent;
-            navigator.clipboard.writeText(url).then(() => {
-                alert('URLをコピーしました');
-            }).catch(err => {
-                alert('コピーに失敗しました');
-                console.error('コピーエラー:', err);
-            });
-        }
-
-        function openModal() {
-            const url = document.getElementById('shareUrl').textContent;
-            const qrcodeElement = document.getElementById('qrcode');
-            qrcodeElement.innerHTML = '';
-            
-            const qr = qrcode(0, 'M'); 
-            qr.addData(url);
-            qr.make();
-            qrcodeElement.innerHTML = qr.createImgTag(8);
-            
-            MicroModal.show('modal-1');
-        }
-
-        function AIrewrite() {
-            ws.send(JSON.stringify({
-                type: 'rewrite'
-            }));
-            document.getElementById('editor').contentEditable = false;
-        }
-
-        function showDiff(newText) {
-            const oldText = document.getElementById('editor').innerHTML;
-
-            const diff = Diff.diffWords(oldText, newText);
-
-            const diffResult = document.getElementById('editor');
-            diffResult.innerHTML = '';
-
-            diff.forEach(part => {
-                const words = part.value.split(' ');
-                words.forEach((word, index) => {
-                    if (word === '' && index === words.length - 1) return;
-
-                    const span = document.createElement('span');
-
-                    if (part.added) {
-                        span.classList.add('added');
-                    } else if (part.removed) {
-                        span.classList.add('removed');
+                
+                // クラスを削除
+                const elements = editor.getElementsByTagName('*');
+                for (let element of elements) {
+                    element.classList.remove('added', 'removed');
+                    if (element.classList.length === 0) {
+                        element.removeAttribute('class');
                     }
-
-                    span.innerHTML = word + ' ';
-                    diffResult.appendChild(span);
-                });
-            });
-        }
-
-        function acceptDiff() {
-            const editor = document.getElementById('editor');
-            editor.innerHTML = newText;
-            editor.contentEditable = true;
-            document.getElementById('diff-buttons').style.display = 'none';
-            
-            // サーバーに変更を送信
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'content',
-                    content: newText
-                }));
-            }
-            
-            // クラスを削除
-            const elements = editor.getElementsByTagName('*');
-            for (let element of elements) {
-                element.classList.remove('added', 'removed');
-                if (element.classList.length === 0) {
-                    element.removeAttribute('class');
                 }
             }
-        }
 
-        function cancelDiff() {
-            const editor = document.getElementById('editor');
-            editor.innerHTML = oldText;
-            editor.contentEditable = true;
-            document.getElementById('diff-buttons').style.display = 'none';
-        }
-    </script>
-</body>
-
+            function cancelDiff() {
+                const editor = document.getElementById('editor');
+                editor.innerHTML = oldText;
+                editor.contentEditable = true;
+                document.getElementById('diff-buttons').style.display = 'none';
+            }
+        </script>
+    </body>
 </html>
