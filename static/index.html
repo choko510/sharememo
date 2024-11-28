@@ -49,7 +49,7 @@
                     取り消し線
                 </button>
 
-                <button onclick="AIrewrite()" class="format-button">
+                <button onclick="AIrewrite()" id="aibutton" class="format-button">
                     AI添削
                 </button>
             </div>
@@ -256,6 +256,10 @@
                                 newText = data.content;
                                 showDiff(data.content);
                                 document.getElementById('diff-buttons').style.display = 'block';
+                            }else if(data.status == "failure"){
+                                document.getElementById('editor').contentEditable = true;
+                                document.getElementById("aibutton").disabled = false;
+                                alert("正しく添削出来ませんでした。")
                             }
                             break;
                     }
@@ -472,10 +476,11 @@
             }
 
             function AIrewrite() {
+                document.getElementById("aibutton").disabled = true;
+                document.getElementById('editor').contentEditable = false;
                 ws.send(JSON.stringify({
                     type: 'rewrite'
                 }));
-                document.getElementById('editor').contentEditable = false;
             }
 
             function showDiff(newText) {

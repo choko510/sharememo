@@ -125,8 +125,6 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                             "name":user_id
                         }), memo_id, user_id)
 
-                    model = genai.GenerativeModel("gemini-1.5-flash")
-
                     input_text = f'''
                     #命令
                     - 文章を校正して下さい。
@@ -139,14 +137,21 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                     #修正文章
                     {memo}
                     '''
-                    
-                    response = model.generate_content(input_text)
-                    print(response.text)
-                    await manager.broadcast(json.dumps({
-                        "type": "rewrite",
-                        "status": "success",
-                        "content":response.text
-                    }), memo_id, None)
+
+                    try:
+                        model = genai.GenerativeModel("gemini-1.5-flash")
+                        response = model.generate_content(input_text)
+                        print(response.text)
+                        await manager.broadcast(json.dumps({
+                            "type": "rewrite",
+                            "status": "success",
+                            "content":response.text
+                        }), memo_id, None)
+                    except:
+                        await manager.broadcast(json.dumps({
+                            "type": "rewrite",
+                            "status": "failure",
+                        }), memo_id, None)
                     
     except WebSocketDisconnect:
         manager.disconnect(memo_id, user_id)
