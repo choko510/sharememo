@@ -124,22 +124,62 @@
                 if (!selection.rangeCount) return;
 
                 const range = selection.getRangeAt(0);
-                const span = document.createElement('span');
-                span.style[style] = value;
-
                 const contents = range.extractContents();
-                span.appendChild(contents);
-                range.insertNode(span);
+                const fragment = document.createDocumentFragment();
+
+                Array.from(contents.childNodes).forEach(node => {
+                    if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'SPAN') {
+                        const currentStyle = node.style[style];
+                        if (currentStyle === value) {
+                            fragment.appendChild(node);
+                        } else {
+                            node.style[style] = value;
+                            fragment.appendChild(node);
+                        }
+                    } else if (node.nodeType === Node.TEXT_NODE) {
+                        const span = document.createElement('span');
+                        span.style[style] = value;
+                        span.textContent = node.textContent;
+                        fragment.appendChild(span);
+                    } else {
+                        fragment.appendChild(node);
+                    }
+                });
+
+                range.deleteContents();
+                range.insertNode(fragment);
 
                 const sel = window.getSelection();
                 sel.removeAllRanges();
-                const newRange = document.createRange();
-                newRange.selectNodeContents(span);
-                newRange.collapse(false);
-                sel.addRange(newRange);
+                sel.addRange(range);
+
+                cleanUpSpans();
 
                 sendContent();
             }
+
+            function cleanUpSpans() {
+                const editor = document.getElementById('editor');
+                const spans = editor.querySelectorAll('span');
+
+                spans.forEach(span => {
+                    const parent = span.parentNode;
+                    if (
+                        parent.tagName === 'SPAN' &&
+                        parent.style.cssText === span.style.cssText
+                    ) {
+                        while (span.firstChild) {
+                            parent.insertBefore(span.firstChild, span);
+                        }
+                        parent.removeChild(span);
+                    }
+
+                    if (!span.textContent.trim()) {
+                        span.remove();
+                    }
+                });
+            }
+
 
             async function init() {
                 const urlParams = new URLSearchParams(window.location.search);
