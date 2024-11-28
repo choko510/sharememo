@@ -43,23 +43,29 @@
                 太字
             </button>
 
+            <button onclick="formatSelection('strike')" class="format-button">
+                取り消し線
+            </button>
+
             <button onclick="AIrewrite()" class="format-button">
                 AI添削
             </button>
         </div>
-            
+
+        <div id="diff-buttons" style="display:none">
+                <button onclick="acceptDiff()" class="format-button">了承</button>
+                <button onclick="cancelDiff()" class="format-button">キャンセル</button>
+        </div>
+        
         <div id="editor" contenteditable="true" onpaste="handlePaste(event)"></div>
 
         <div class="share-link">
             <button onclick="copyAll()" class="format-button">全てをコピー</button>
             <button onclick="openModal()" class="format-button">共有</button>
-            <div id="diff-buttons" style="display:none">
-                <button onclick="acceptDiff()" class="format-button">了承</button>
-                <button onclick="cancelDiff()" class="format-button">キャンセル</button>
-            </div>
         </div>
         
     </div>
+
         <div class="modal micromodal-slide" id="modal-1" aria-hidden="true">
             <div class="modal__overlay" tabindex="-1" data-micromodal-close>
             <div class="modal__container" role="dialog" aria-modal="true" aria-labelledby="modal-1-title" style="text-align: center;">
@@ -283,6 +289,8 @@
 
             if (style === 'bold') {
                 span.style.fontWeight = 'bold';
+            } else if (style === 'strike') {
+                span.style.textDecoration = 'line-through';
             } else {
                 span.style[style] = value;
             }
