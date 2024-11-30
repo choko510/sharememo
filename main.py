@@ -118,42 +118,53 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
             
             elif message["type"] == "rewrite":
                 if memo_id in memos:
-                    memo = memos[memo_id]["content"]
-                    await manager.broadcast(json.dumps({
+                    if message["status"] == "gen":
+                        memo = memos[memo_id]["content"]
+                        await manager.broadcast(json.dumps({
+                                "type": "rewrite",
+                                "status": "stop",
+                                "name":user_id
+                            }), memo_id, user_id)
+
+                        input_text = f'''
+                        #命令
+                        - 文章を校正して下さい。
+                        - 誤字脱字なども修正して下さい。
+                        #制約条件
+                        - 元の文章の原型を保ったまま文章を変更して下さい。
+                        - 改行の位置関係などを変えないで下さい。
+                        - 出力形式は必ず添削した文章のみにして下さい。
+                        - 修正文章にはHTMLが含まれます、基本的には消さないで下さい、それらは削除の必要がある場合のみ消して下さい。
+                        - 改行は<br>タグを使用します。
+                        #修正文章
+                        {memo}
+                        '''
+
+                        try:
+                            model = genai.GenerativeModel("gemini-1.5-flash")
+                            response = model.generate_content(input_text)
+                            print(response.text)
+                            await manager.broadcast(json.dumps({
+                                "type": "rewrite",
+                                "status": "success",
+                                "content":response.text
+                            }), memo_id, None)
+                        except:
+                            await manager.broadcast(json.dumps({
+                                "type": "rewrite",
+                                "status": "failure",
+                            }), memo_id, None)
+                    elif message["status"] == "accept":
+                        await manager.broadcast(json.dumps({
                             "type": "rewrite",
-                            "status": "stop",
-                            "name":user_id
+                            "status": "accept",
+                        }), memo_id, user_id)
+                    elif message["status"] == "cancel":
+                        await manager.broadcast(json.dumps({
+                            "type": "rewrite",
+                            "status": "cancel",
                         }), memo_id, user_id)
 
-                    input_text = f'''
-                    #命令
-                    - 文章を校正して下さい。
-                    - 誤字脱字なども修正して下さい。
-                    #制約条件
-                    - 元の文章の原型を保ったまま文章を変更して下さい。
-                    - 改行の位置関係などを変えないで下さい。
-                    - 出力形式は必ず添削した文章のみにして下さい。
-                    - 修正文章にはHTMLが含まれます、基本的には消さないで下さい、それらは削除の必要がある場合のみ消して下さい。
-                    - 改行は<br>タグを使用します。
-                    #修正文章
-                    {memo}
-                    '''
-
-                    try:
-                        model = genai.GenerativeModel("gemini-1.5-flash")
-                        response = model.generate_content(input_text)
-                        print(response.text)
-                        await manager.broadcast(json.dumps({
-                            "type": "rewrite",
-                            "status": "success",
-                            "content":response.text
-                        }), memo_id, None)
-                    except:
-                        await manager.broadcast(json.dumps({
-                            "type": "rewrite",
-                            "status": "failure",
-                        }), memo_id, None)
-                    
     except WebSocketDisconnect:
         manager.disconnect(memo_id, user_id)
         if memo_id in memos and "cursors" in memos[memo_id]:

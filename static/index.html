@@ -55,8 +55,8 @@
             </div>
 
             <div id="diff-buttons" style="display:none">
-                    <button onclick="acceptDiff()" class="format-button">了承</button>
-                    <button onclick="cancelDiff()" class="format-button">キャンセル</button>
+                <button onclick="acceptDiff();wsSend('rewrite','accept');" class="format-button">了承</button>
+                <button onclick="cancelDiff();wsSend('rewrite','cancel');" class="format-button">キャンセル</button>
             </div>
             
             <div id="editor" contenteditable="true" onpaste="handlePaste(event)"></div>
@@ -260,6 +260,10 @@
                                 document.getElementById('editor').contentEditable = true;
                                 document.getElementById("aibutton").disabled = false;
                                 alert("正しく添削出来ませんでした。")
+                            }else if(data.status == "accept"){
+                                acceptDiff();
+                            }else if(data.status == "cancel"){
+                                cancelDiff();
                             }
                             break;
                     }
@@ -276,6 +280,15 @@
                 ws.onerror = function() {
                     alert('接続エラーが発生しました。ページを再読み込みしてください。');
                 };
+            }
+
+            function wsSend(type,status){
+                if(type == "rewrite"){
+                    ws.send(JSON.stringify({
+                        type: type,
+                        status: status
+                    }));
+                }
             }
 
             function updateUsersList(users) {
@@ -479,7 +492,8 @@
                 document.getElementById("aibutton").disabled = true;
                 document.getElementById('editor').contentEditable = false;
                 ws.send(JSON.stringify({
-                    type: 'rewrite'
+                    type: 'rewrite',
+                    status: "gen"
                 }));
             }
 
@@ -516,13 +530,6 @@
                 editor.contentEditable = true;
                 document.getElementById("aibutton").disabled = false;
                 document.getElementById('diff-buttons').style.display = 'none';
-                
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({
-                        type: 'content',
-                        content: newText
-                    }));
-                }
                 
                 const elements = editor.getElementsByTagName('*');
                 for (let element of elements) {
