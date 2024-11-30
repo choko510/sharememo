@@ -52,6 +52,8 @@
                 <button onclick="AIrewrite()" id="aibutton" class="format-button">
                     AI添削
                 </button>
+
+                <span>文字数: <span id="charCount">0</span></span>
             </div>
 
             <div id="diff-buttons" style="display:none">
@@ -119,6 +121,16 @@
                 init();
             });
 
+            function updateCharCount() {
+                const editor = document.getElementById('editor');
+                // HTMLタグを除去し、改行や空白を含まない純粋な文字数をカウント
+                const text = editor.innerHTML
+                    .replace(/<[^>]*>/g, '') // HTMLタグを除去
+                    .replace(/&nbsp;/g, ' ') // &nbsp;を空白に変換
+                    .replace(/\s+/g, ''); // 空白文字を除去
+                document.getElementById('charCount').textContent = text.length;
+            }
+
             function applyStyle(style, value) {
                 const selection = window.getSelection();
                 if (!selection.rangeCount) return;
@@ -154,7 +166,7 @@
                 sel.addRange(range);
 
                 cleanUpSpans();
-
+                updateCharCount();
                 sendContent();
             }
 
@@ -203,6 +215,7 @@
                 const lines = plainText.split('\n'); // 改行で分割
                 const formattedText = lines.join('<br>'); // 改行を<br>に変換
                 document.execCommand('insertHTML', false, formattedText);
+                updateCharCount();
             }
 
             function connectWebSocket() {
@@ -216,6 +229,7 @@
                         case 'init':
                             document.getElementById('editor').innerHTML = data.content;
                             lastContent = data.content;
+                            updateCharCount();
                             break;
 
                         case 'error':
@@ -228,6 +242,7 @@
                             if (!isProcessing && data.content !== lastContent) { 
                                 document.getElementById('editor').innerHTML = data.content;
                                 lastContent = data.content; 
+                                updateCharCount();
                                 Object.entries(cursorPositions).forEach(([userId, data]) => {
                                     updateCursor(userId, data.position, data.name);
                                 });
@@ -383,7 +398,7 @@
                 sendContent();
             }
 
-            document.getElementById('editor').addEventListener('input', sendContent);
+            document.getElementById('editor').addEventListener('input',() => { sendContent();updateCharCount();});
 
             let sendTimeout;
             function sendContent() {
@@ -522,6 +537,7 @@
                         diffResult.appendChild(span);
                     });
                 });
+                updateCharCount();
             }
 
             function acceptDiff() {
@@ -538,6 +554,7 @@
                         element.removeAttribute('class');
                     }
                 }
+                updateCharCount();
             }
 
             function cancelDiff() {
@@ -546,6 +563,7 @@
                 editor.contentEditable = true;
                 document.getElementById("aibutton").disabled = false;
                 document.getElementById('diff-buttons').style.display = 'none';
+                updateCharCount();
             }
         </script>
     </body>
