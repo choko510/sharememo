@@ -165,29 +165,29 @@
                 sel.removeAllRanges();
                 sel.addRange(range);
 
-                cleanUpSpans();
+                cleanUpEmptyTags();
                 updateCharCount();
                 sendContent();
             }
 
-            function cleanUpSpans() {
+            function cleanUpEmptyTags() {
                 const editor = document.getElementById('editor');
-                const spans = editor.querySelectorAll('span');
+                const elements = editor.querySelectorAll('div, span');
 
-                spans.forEach(span => {
-                    const parent = span.parentNode;
+                elements.forEach(element => {
+                    const parent = element.parentNode;
                     if (
-                        parent.tagName === 'SPAN' &&
-                        parent.style.cssText === span.style.cssText
+                        parent.tagName === element.tagName &&
+                        parent.style.cssText === element.style.cssText
                     ) {
-                        while (span.firstChild) {
-                            parent.insertBefore(span.firstChild, span);
+                        while (element.firstChild) {
+                            parent.insertBefore(element.firstChild, element);
                         }
-                        parent.removeChild(span);
+                        parent.removeChild(element);
                     }
 
-                    if (!span.textContent.trim()) {
-                        span.remove();
+                    if (!element.textContent.trim() && !element.children.length) {
+                        element.remove();
                     }
                 });
             }
