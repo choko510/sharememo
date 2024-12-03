@@ -44,21 +44,22 @@ body {
     position: absolute;
     width: 2px;
     height: 20px;
-    background-color: #ff0000;
+    background-color: var(--cursor-color);
     pointer-events: none;
 }
 
 .cursor::after {
     content: attr(data-name);
+    background-color: var(--cursor-color);
     position: absolute;
     top: -20px;
     left: 0;
-    background-color: #ff0000;
     color: white;
     padding: 2px 5px;
     border-radius: 3px;
     font-size: 12px;
     white-space: nowrap;
+    border-radius: 2px;
 }
 
 .share-link {
@@ -117,4 +118,13 @@ body {
     text-align: right;
     padding-right: 10px;
     color: #6a737d;
+}
+
+.countbox{
+    font-size: 90%;
+    color: #343537;
+    background-color: #f8f9fa;
+    border: 1px solid #ddd;
+    padding: 6px 10px;
+    border-radius: 4px;
 }

@@ -53,7 +53,6 @@
                     AI添削
                 </button>
 
-                <span>文字数: <span id="charCount">0</span></span>
             </div>
 
             <div id="diff-buttons" style="display:none">
@@ -64,6 +63,7 @@
             <div id="editor" contenteditable="true" onpaste="handlePaste(event)"></div>
 
             <div class="share-link">
+                <span class="countbox">文字数: <span id="charCount">0</span></span> 
                 <button onclick="copyAll()" class="format-button">全てをコピー</button>
                 <button onclick="openModal()" class="format-button">共有</button>
             </div>
@@ -123,11 +123,11 @@
 
             function updateCharCount() {
                 const editor = document.getElementById('editor');
-                // HTMLタグを除去し、改行や空白を含まない純粋な文字数をカウント
+
                 const text = editor.innerHTML
-                    .replace(/<[^>]*>/g, '') // HTMLタグを除去
-                    .replace(/&nbsp;/g, ' ') // &nbsp;を空白に変換
-                    .replace(/\s+/g, ''); // 空白文字を除去
+                    .replace(/<[^>]*>/g, '')
+                    .replace(/&nbsp;/g, ' ')
+                    .replace(/\s+/g, '');
                 document.getElementById('charCount').textContent = text.length;
             }
 
@@ -211,9 +211,9 @@
             function handlePaste(event) {
                 event.preventDefault();
                 const text = event.clipboardData.getData('text/plain');
-                const plainText = text.replace(/<\/?[^>]+(>|$)/g, ""); // HTMLタグを削除
-                const lines = plainText.split('\n'); // 改行で分割
-                const formattedText = lines.join('<br>'); // 改行を<br>に変換
+                const plainText = text.replace(/<\/?[^>]+(>|$)/g, "");
+                const lines = plainText.split('\n');
+                const formattedText = lines.join('<br>');
                 document.execCommand('insertHTML', false, formattedText);
                 updateCharCount();
             }
@@ -244,7 +244,7 @@
                                 lastContent = data.content; 
                                 updateCharCount();
                                 Object.entries(cursorPositions).forEach(([userId, data]) => {
-                                    updateCursor(userId, data.position, data.name);
+                                    updateCursor(userId, data.position, data.name, data.color);
                                 });
                             }
                             break;
@@ -252,9 +252,11 @@
                         case 'cursor':
                             cursorPositions[data.user_id] = {
                                 position: data.position,
-                                name: data.name
+                                name: data.name,
+                                color: data.color
                             };
-                            updateCursor(data.user_id, data.position, data.name);
+                            
+                            updateCursor(data.user_id, data.position, data.name, data.color);
                             break;
 
                         case 'users':
@@ -307,11 +309,13 @@
             }
 
             function updateUsersList(users) {
-                const usersList = Object.values(users).join(', ');
+                const usersList = Object.values(users)
+                    .map(user => user.name)
+                    .join(', ');
                 document.getElementById('activeUsers').textContent = usersList;
             }
 
-            function updateCursor(userId, position, name) {
+            function updateCursor(userId, position, name, color) {
                 let cursor = document.getElementById(`cursor-${userId}`);
                 const editor = document.getElementById('editor');
 
@@ -347,6 +351,7 @@
                                     cursor.style.left = (rect.left - editorRect.left) + 'px';
                                     cursor.style.top = (rect.top - editorRect.top) + 'px';
                                     cursor.setAttribute('data-name', name);
+                                    cursor.style.setProperty('--cursor-color', color);
                                     break;
                                 }
                                 currentPos += currentNode.length;

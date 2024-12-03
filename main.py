@@ -17,10 +17,17 @@ app = FastAPI()
 memos: Dict[str, Dict] = {}
 cursors: Dict[str, Dict] = {}
 
+
+COLORLIST = [   "#E69AAF", "#EEB598", "#E6D38C", "#BFE095", "#93D6CE", "#94BBE6", "#B297CF", "#E0A1B1", "#EBC297", "#E6DBB1",
+                "#C3DE0B", "#95CCBF", "#A6C2E6", "#BFA1E6", "#E2B4C7", "#E6CCAC", "#DED9A6", "#B4CFA2", "#A2CBBE", "#E6D9C2",
+                "#AFC2E0", "#C3AEE0", "#E0B7C7", "#E6C7B4", "#E6DEB7", "#CCDBBE", "#B7D1CA", "#C3CCE6", "#CEBEE0", "#E0BECF"
+            ]
+
 class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, Dict[str, WebSocket]] = {}
         self.user_names: Dict[str, str] = {}
+        self.user_colors: Dict[str, str] = {}
 
     async def connect(self, websocket: WebSocket, memo_id: str, user_id: str, user_name: str):
         await websocket.accept()
@@ -28,19 +35,24 @@ class ConnectionManager:
             self.active_connections[memo_id] = {}
         self.active_connections[memo_id][user_id] = websocket
         self.user_names[user_id] = user_name
+        self.user_colors[user_id] = COLORLIST[len(self.user_colors) % len(COLORLIST)]
         await self.broadcast_users(memo_id)
 
     def disconnect(self, memo_id: str, user_id: str):
         if memo_id in self.active_connections:
             self.active_connections[memo_id].pop(user_id, None)
             self.user_names.pop(user_id, None)
+            self.user_colors.pop(user_id, None)
             if not self.active_connections[memo_id]:
                 del self.active_connections[memo_id]
 
     async def broadcast_users(self, memo_id: str):
         if memo_id in self.active_connections:
             users = {
-                uid: self.user_names[uid]
+                uid: {
+                    "name": self.user_names[uid],
+                    "color": self.user_colors[uid]
+                }
                 for uid in self.active_connections[memo_id].keys()
             }
             message = json.dumps({"type": "users", "users": users})
@@ -102,7 +114,8 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                     cursors = memos[memo_id].get("cursors", {})
                     cursors[user_id] = {
                         "position": message["position"],
-                        "name": user_name
+                        "name": user_name,
+                        "color": manager.user_colors[user_id]
                     }
                     memos[memo_id]["cursors"] = cursors
                     await manager.broadcast(
@@ -110,7 +123,8 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                             "type": "cursor",
                             "user_id": user_id,
                             "position": message["position"],
-                            "name": user_name
+                            "name": user_name,
+                            "color": manager.user_colors[user_id]
                         }),
                         memo_id,
                         user_id
