@@ -7,16 +7,29 @@ import uuid
 import google.generativeai as genai
 from dotenv import load_dotenv
 import os
+from sqlalchemy import create_engine, Column, String, Text
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 
 load_dotenv()
 
-genai.configure(api_key=os.getenv("GEMINI_APIKEY")) 
+genai.configure(api_key=os.getenv("GEMINI_APIKEY"))
+
+DATABASE_URL = "sqlite:///./memo.db"
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+class Memo(Base):
+    __tablename__ = "memos"
+    id = Column(String, primary_key=True)
+    content = Column(Text, default="")
+
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-memos: Dict[str, Dict] = {}
 cursors: Dict[str, Dict] = {}
-
 
 COLORLIST = [   "#E69AAF", "#EEB598", "#E6D38C", "#BFE095", "#93D6CE", "#94BBE6", "#B297CF", "#E0A1B1", "#EBC297", "#E6DBB1",
                 "#C3DE0B", "#95CCBF", "#A6C2E6", "#BFA1E6", "#E2B4C7", "#E6CCAC", "#DED9A6", "#B4CFA2", "#A2CBBE", "#E6D9C2",
@@ -75,10 +88,13 @@ async def get():
 @app.get("/new")
 async def create_memo():
     memo_id = str(uuid.uuid4())
-    memos[memo_id] = {
-        "content": "",
-        "cursors": {}
-    }
+    db = SessionLocal()
+    try:
+        new_memo = Memo(id=memo_id)
+        db.add(new_memo)
+        db.commit()
+    finally:
+        db.close()
     return {"memo_id": memo_id}
 
 @app.websocket("/ws/{memo_id}")
@@ -89,35 +105,44 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
     await manager.connect(websocket, memo_id, user_id, user_name)
     
     try:
-        if memo_id in memos:
+        db = SessionLocal()
+        memo = db.query(Memo).filter(Memo.id == memo_id).first()
+        if memo:
             await websocket.send_json({
                 "type": "init",
-                "content": memos[memo_id]["content"]
+                "content": memo.content
             })
         else:
             await websocket.send_json({
                 "type": "error",
                 "status":"notfound"
             })
+        db.close()
         
         while True:
             data = await websocket.receive_text()
             message = json.loads(data)
 
             if message["type"] == "content":
-                if memo_id in memos:
-                    memos[memo_id]["content"] = message["content"]
+                db = SessionLocal()
+                memo = db.query(Memo).filter(Memo.id == memo_id).first()
+                if memo:
+                    memo.content = message["content"]
+                    db.commit()
                     await manager.broadcast(data, memo_id, user_id)
+                db.close()
             
             elif message["type"] == "cursor":
-                if memo_id in memos:
-                    cursors = memos[memo_id].get("cursors", {})
-                    cursors[user_id] = {
+                db = SessionLocal()
+                memo = db.query(Memo).filter(Memo.id == memo_id).first()
+                if memo:
+                    if not hasattr(memo, "cursors"):
+                        memo.cursors = {}
+                    memo.cursors[user_id] = {
                         "position": message["position"],
                         "name": user_name,
                         "color": manager.user_colors[user_id]
                     }
-                    memos[memo_id]["cursors"] = cursors
                     await manager.broadcast(
                         json.dumps({
                             "type": "cursor",
@@ -129,11 +154,14 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                         memo_id,
                         user_id
                     )
+                db.close()
             
             elif message["type"] == "rewrite":
-                if memo_id in memos:
+                db = SessionLocal()
+                memo = db.query(Memo).filter(Memo.id == memo_id).first()
+                if memo:
                     if message["status"] == "gen":
-                        memo = memos[memo_id]["content"]
+                        memo_content = memo.content
                         await manager.broadcast(json.dumps({
                                 "type": "rewrite",
                                 "status": "stop",
@@ -151,7 +179,7 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                             修正文章に含まれるHTMLタグは、基本的にそのまま残してください。ただし、明確に不要な場合のみ削除してください。
                             改行は必ず <br> タグを使用してください。
                         #修正対象文章
-                            {memo}
+                            {memo_content}
                         '''
 
                         try:
@@ -178,11 +206,15 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                             "type": "rewrite",
                             "status": "cancel",
                         }), memo_id, user_id)
+                db.close()
 
     except WebSocketDisconnect:
         manager.disconnect(memo_id, user_id)
-        if memo_id in memos and "cursors" in memos[memo_id]:
-            memos[memo_id]["cursors"].pop(user_id, None)
+        db = SessionLocal()
+        memo = db.query(Memo).filter(Memo.id == memo_id).first()
+        if memo and hasattr(memo, "cursors"):
+            memo.cursors.pop(user_id, None)
+        db.close()
         await manager.broadcast_users(memo_id)
 
 if __name__ == "__main__":
