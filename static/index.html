@@ -49,15 +49,15 @@
                     取り消し線
                 </button>
 
-                <button onclick="AIrewrite()" id="aibutton" class="format-button">
-                    AI添削
+                <button onclick="tooltip()" id="tool" class="format-button">
+                    AIツール
                 </button>
 
             </div>
 
             <div id="diff-buttons" style="display:none">
-                <button onclick="acceptDiff();wsSend('rewrite','accept');" class="format-button">了承</button>
-                <button onclick="cancelDiff();wsSend('rewrite','cancel');" class="format-button">キャンセル</button>
+                <button onclick="acceptDiff();wsSend('ai','accept');" class="format-button" id="accept">了承</button>
+                <button onclick="cancelDiff();wsSend('ai','cancel');" class="format-button" id="cancel">キャンセル</button>
             </div>
             
             <div id="editor" contenteditable="true" onpaste="handlePaste(event)"></div>
@@ -86,6 +86,12 @@
             </div>
         </div>
         
+        <div id="tooltip-container" class="tooltip-container" style="display: none;">
+            <div class="tooltip-item" onclick="AIreq('rewrite')">AI添削</div>
+            <div class="tooltip-item" onclick="AIreq('makeword')">AI文字数稼ぎ</div>
+            <div class="tooltip-item" onclick="AIreq('continued')">AIで続きを書く</div>
+        </div>
+
         <link rel="stylesheet" href="static/modal.css">
         <script src="https://cdn.jsdelivr.net/npm/micromodal@0.4.10/dist/micromodal.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
@@ -226,7 +232,7 @@
                     const data = JSON.parse(event.data);
 
                     switch (data.type) {
-                        case 'init':
+                        case 'init': 
                             document.getElementById('editor').innerHTML = data.content;
                             lastContent = data.content;
                             updateCharCount();
@@ -264,8 +270,9 @@
                             updateUsersList(data.users);
                             break;
 
-                        case 'rewrite':
+                        case 'ai':
                             if (data.status == "stop"){
+                                document.getElementById("tool").disabled = true;
                                 document.getElementById('editor').contentEditable = false;
                             }else if(data.status == "success"){
                                 console.log(data.content);
@@ -275,7 +282,7 @@
                                 document.getElementById('diff-buttons').style.display = 'block';
                             }else if(data.status == "failure"){
                                 document.getElementById('editor').contentEditable = true;
-                                document.getElementById("aibutton").disabled = false;
+                                document.getElementById("tool").disabled = false;
                                 alert("正しく添削出来ませんでした。")
                             }else if(data.status == "accept"){
                                 acceptDiff();
@@ -300,12 +307,10 @@
             }
 
             function wsSend(type,status){
-                if(type == "rewrite"){
-                    ws.send(JSON.stringify({
-                        type: type,
-                        status: status
-                    }));
-                }
+                ws.send(JSON.stringify({
+                    type: type,
+                    status: status
+                }));
             }
 
             function updateUsersList(users) {
@@ -508,11 +513,13 @@
                 MicroModal.show('modal-1');
             }
 
-            function AIrewrite() {
-                document.getElementById("aibutton").disabled = true;
+            function AIreq(type) {
+                document.getElementById('tooltip-container').style.display = 'none';
+                document.getElementById("tool").disabled = true;
                 document.getElementById('editor').contentEditable = false;
                 ws.send(JSON.stringify({
-                    type: 'rewrite',
+                    type: "ai",
+                    req:type,
                     status: "gen"
                 }));
             }
@@ -549,7 +556,7 @@
                 const editor = document.getElementById('editor');
                 editor.innerHTML = newText;
                 editor.contentEditable = true;
-                document.getElementById("aibutton").disabled = false;
+                document.getElementById("tool").disabled = false;
                 document.getElementById('diff-buttons').style.display = 'none';
                 
                 const elements = editor.getElementsByTagName('*');
@@ -566,10 +573,34 @@
                 const editor = document.getElementById('editor');
                 editor.innerHTML = oldText;
                 editor.contentEditable = true;
-                document.getElementById("aibutton").disabled = false;
+                document.getElementById("tool").disabled = false;
                 document.getElementById('diff-buttons').style.display = 'none';
                 updateCharCount();
             }
+
+            function tooltip() {
+                const tooltipContainer = document.getElementById('tooltip-container');
+                const toolButton = document.getElementById('tool');
+                const buttonRect = toolButton.getBoundingClientRect();
+
+                if (tooltipContainer.style.display === 'none') {
+                    tooltipContainer.style.display = 'block';
+                    tooltipContainer.style.top = `${buttonRect.bottom + window.scrollY + 5}px`;
+                    tooltipContainer.style.left = `${buttonRect.left + window.scrollX}px`;
+                } else {
+                    tooltipContainer.style.display = 'none';
+                }
+            }
+
+            document.addEventListener('click', function(event) {
+                const tooltipContainer = document.getElementById('tooltip-container');
+                const toolButton = document.getElementById('tool');
+                
+                if (!tooltipContainer.contains(event.target) && event.target !== toolButton) {
+                    tooltipContainer.style.display = 'none';
+                }
+            });
+
         </script>
     </body>
 </html>

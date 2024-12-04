@@ -156,54 +156,84 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                     )
                 db.close()
             
-            elif message["type"] == "rewrite":
+            elif message["type"] == "ai":
                 db = SessionLocal()
                 memo = db.query(Memo).filter(Memo.id == memo_id).first()
                 if memo:
                     if message["status"] == "gen":
                         memo_content = memo.content
                         await manager.broadcast(json.dumps({
-                                "type": "rewrite",
+                                "type": "ai",
                                 "status": "stop",
                                 "name":user_id
                             }), memo_id, user_id)
-
-                        input_text = f'''
-                        #命令
-                            文章を校正してください。
-                            誤字脱字や不自然な表現も修正してください。
-                        #制約条件
-                            元の文章の意図や構造を保ったまま修正してください。
-                            改行の位置関係を変更しないでください。
-                            出力形式は、添削後の文章のみとしてください。
-                            修正文章に含まれるHTMLタグは、基本的にそのまま残してください。ただし、明確に不要な場合のみ削除してください。
-                            改行は必ず <br> タグを使用してください。
-                        #修正対象文章
-                            {memo_content}
-                        '''
+                        if message["req"] == "rewrite":
+                            input_text = f'''
+                            #命令
+                                文章を校正してください。
+                                誤字脱字や不自然な表現も修正してください。
+                            #制約条件
+                                元の文章の意図や構造を保ったまま修正してください。
+                                改行の位置関係を変更しないでください。
+                                出力形式は、添削後の文章のみとしてください。
+                                修正文章に含まれるHTMLタグは、基本的にそのまま残してください。ただし、明確に不要な場合のみ削除してください。
+                                改行は必ず <br> タグを使用してください。
+                            #修正対象文章
+                                {memo_content}
+                            '''
+                        elif message["req"] == "makeword":
+                            input_text = f'''
+                            #命令
+                                文章の量を増やして下さい。
+                            #制約条件
+                                元の文章の意図や構造を保ったまま増やしてください。
+                                改行の位置関係を変更しないでください。
+                                出力形式は、増やした後の文章のみとしてください。
+                                修正文章に含まれるHTMLタグは、基本的にそのまま残してください。ただし、明確に不要な場合のみ削除してください。
+                                改行は必ず <br> タグを使用してください。
+                            #対象文章 
+                                {memo_content}
+                            '''
+                        elif message["req"] == "continued":
+                            input_text = f'''
+                            #命令
+                                文章が途切れている所から、続きを書いて下さい。
+                            #制約条件
+                                元の文章の意図や構造を保ったまま続きを書いてください。
+                                改行の位置関係を変更しないでください。
+                                出力形式は、増やす前の文章を含めた全ての文章を出力してください。
+                                修正文章に含まれるHTMLタグは、基本的にそのまま残してください。ただし、明確に不要な場合のみ削除してください。
+                                改行は必ず <br> タグを使用してください。
+                            #対象文章
+                                {memo_content}
+                            '''
+                        else:
+                            await manager.broadcast(json.dumps({
+                                "type": "ai",
+                                "status": "failure",
+                            }), memo_id, None)
 
                         try:
                             model = genai.GenerativeModel("gemini-1.5-flash")
                             response = model.generate_content(input_text)
-                            print(response.text)
                             await manager.broadcast(json.dumps({
-                                "type": "rewrite",
+                                "type": "ai",
                                 "status": "success",
                                 "content":response.text
                             }), memo_id, None)
                         except:
                             await manager.broadcast(json.dumps({
-                                "type": "rewrite",
+                                "type": "ai",
                                 "status": "failure",
                             }), memo_id, None)
                     elif message["status"] == "accept":
                         await manager.broadcast(json.dumps({
-                            "type": "rewrite",
+                            "type": "ai",
                             "status": "accept",
                         }), memo_id, user_id)
                     elif message["status"] == "cancel":
                         await manager.broadcast(json.dumps({
-                            "type": "rewrite",
+                            "type": "ai",
                             "status": "cancel",
                         }), memo_id, user_id)
                 db.close()

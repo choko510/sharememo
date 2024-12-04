@@ -1,3 +1,4 @@
+/* ベースレイアウト */
 body {
     font-family: 'Helvetica Neue', Arial, sans-serif;
     margin: 0;
@@ -16,6 +17,7 @@ body {
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
+/* コントロール部分 */
 .controls {
     margin-bottom: 20px;
     display: flex;
@@ -30,6 +32,7 @@ body {
     border-radius: 4px;
 }
 
+/* エディター */
 #editor {
     flex: 1;
     padding: 7px;
@@ -40,6 +43,7 @@ body {
     height: 100%;
 }
 
+/* カーソル表示 */
 .cursor {
     position: absolute;
     width: 2px;
@@ -56,12 +60,12 @@ body {
     left: 0;
     color: white;
     padding: 2px 5px;
-    border-radius: 3px;
     font-size: 12px;
     white-space: nowrap;
     border-radius: 2px;
 }
 
+/* 共有リンク */
 .share-link {
     padding: 10px;
     background-color: #f8f9fa;
@@ -69,10 +73,11 @@ body {
     margin-top: 10px;
 }
 
-#shareUrl{
+#shareUrl {
     font-size: 120%;
 }
 
+/* ユーザーリスト */
 .users-list {
     margin-bottom: 10px;
     padding: 10px;
@@ -80,18 +85,21 @@ body {
     border-radius: 4px;
 }
 
+/* ボタン */
 .format-button {
     background-color: #f8f9fa;
     border: 1px solid #ddd;
     padding: 5px 10px;
     border-radius: 4px;
     cursor: pointer;
+    transition: background-color 0.2s;
 }
 
 .format-button:hover {
     background-color: #e9ecef;
 }
 
+/* 差分表示 */
 .diff-container {
     border: 1px solid #ccc;
     padding: 10px;
@@ -120,11 +128,32 @@ body {
     color: #6a737d;
 }
 
-.countbox{
+/* 文字数カウント */
+.countbox {
     font-size: 90%;
     color: #343537;
     background-color: #f8f9fa;
     border: 1px solid #ddd;
     padding: 6px 10px;
     border-radius: 4px;
+}
+
+/* ツールチップ */
+.tooltip-container {
+    position: absolute;
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    z-index: 1000;
+}
+
+.tooltip-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.tooltip-item:hover {
+    background-color: #f0f0f0;
 }
