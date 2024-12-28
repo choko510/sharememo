@@ -171,23 +171,38 @@
                 sel.removeAllRanges();
                 sel.addRange(range);
 
-                cleanUpEmptyTags();
+                cleanup();
                 updateCharCount();
                 sendContent();
             }
 
-            function cleanUpEmptyTags() {
+            function cleanup() {
                 const editor = document.getElementById('editor');
-                const elements = editor.querySelectorAll('div, span');
+                const elements = editor.querySelectorAll('*'); 
 
                 elements.forEach(element => {
                     const parent = element.parentNode;
+
+                    if (element.getAttribute('style') === '') {
+                        element.removeAttribute('style');
+                    }
+
                     if (
-                        parent.tagName === element.tagName &&
+                        parent &&
+                        element.style.cssText === parent.style.cssText &&
+                        parent.tagName === element.tagName
+                    ) {
+                        element.style.cssText = '';
+                    }
+
+                    if (
+                        parent &&
+                        element.tagName === 'SPAN' &&
+                        parent.tagName === 'SPAN' &&
                         parent.style.cssText === element.style.cssText
                     ) {
                         while (element.firstChild) {
-                            parent.insertBefore(element.firstChild, element);
+                            parent.appendChild(element.firstChild);
                         }
                         parent.removeChild(element);
                     }
@@ -294,7 +309,6 @@
                 };
 
                 ws.onclose = function () {
-                    
                     setTimeout(() => {
                         alert('接続が切断されました。再接続します。');
                         connectWebSocket();
@@ -383,32 +397,53 @@
                 if (!selection.rangeCount) return;
 
                 const range = selection.getRangeAt(0);
-                const span = document.createElement('span');
-
-                if (style === 'bold') {
-                    span.style.fontWeight = 'bold';
-                } else if (style === 'strike') {
-                    span.style.textDecoration = 'line-through';
-                } else {
-                    span.style[style] = value;
-                }
-
                 const contents = range.extractContents();
-                span.appendChild(contents);
-                range.insertNode(span);
+                const fragment = document.createDocumentFragment();
 
-                const spans = document.getElementById('editor').getElementsByTagName('span');
-                for (let i = spans.length - 1; i >= 0; i--) {
-                    const span = spans[i];
-                    if (!span.textContent.trim()) {
-                        span.parentNode.removeChild(span);
-                    }
+                let hasBold = false;
+                if (style === 'bold') {
+                    // 選択範囲内に太字があるかチェック
+                    Array.from(contents.childNodes).forEach(node => {
+                        if (node.nodeType === Node.ELEMENT_NODE && 
+                            node.tagName === 'SPAN' && 
+                            node.style.fontWeight === 'bold') {
+                            hasBold = true;
+                        }
+                    });
                 }
 
+                Array.from(contents.childNodes).forEach(node => {
+                    if (style === 'bold') {
+                        if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'SPAN') {
+                            if (hasBold && node.style.fontWeight === 'bold') {
+                                node.style.fontWeight = 'normal';
+                            } else if (!hasBold) {
+                                node.style.fontWeight = 'bold';
+                            }
+                            fragment.appendChild(node);
+                        } else {
+                            const span = document.createElement('span');
+                            span.style.fontWeight = hasBold ? 'normal' : 'bold';
+                            span.appendChild(node.cloneNode(true));
+                            fragment.appendChild(span);
+                        }
+                    } else if (style === 'strike') {
+                        const span = document.createElement('span');
+                        span.style.textDecoration = 'line-through';
+                        span.appendChild(node.cloneNode(true));
+                        fragment.appendChild(span);
+                    }
+                });
+
+                range.insertNode(fragment);
+                cleanup();
                 sendContent();
             }
 
-            document.getElementById('editor').addEventListener('input',() => { sendContent();updateCharCount();});
+            document.getElementById('editor').addEventListener('input',() => {
+                sendContent();
+                updateCharCount();
+            });
 
             let sendTimeout;
             function sendContent() {
