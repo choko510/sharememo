@@ -298,7 +298,6 @@
                                 document.getElementById("tool").disabled = true;
                                 document.getElementById('editor').contentEditable = false;
                             }else if(data.status == "success"){
-                                console.log(data.content);
                                 oldText = document.getElementById('editor').innerHTML;
                                 newText = data.content;
                                 showDiff(data.content);
@@ -530,10 +529,9 @@
             function copyAll() {
                 const allText = document.getElementById('editor').innerText;
                 navigator.clipboard.writeText(allText).then(() => {
-                    console.log("copy");
+                    showToast('コピーしました', 'success', 1500);
                 }).catch(err => {
                     showToast('コピーに失敗しました。', 'error', 5000);
-                    console.error('コピーエラー:', err);
                 });
             }
 
@@ -543,7 +541,6 @@
                     showToast('URLをコピーしました', 'success', 5000);
                 }).catch(err => {
                     showToast('コピーに失敗しました', 'error', 5000);
-                    console.error('コピーエラー:', err);
                 });
             }
 

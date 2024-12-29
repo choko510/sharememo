@@ -216,11 +216,18 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                         try:
                             model = genai.GenerativeModel("gemini-1.5-flash")
                             response = model.generate_content(input_text)
-                            await manager.broadcast(json.dumps({
-                                "type": "ai",
-                                "status": "success",
-                                "content":memo_content+response.text
-                            }), memo_id, None)
+                            if message["req"] == "continued":
+                                await manager.broadcast(json.dumps({
+                                    "type": "ai",
+                                    "status": "success",
+                                    "content":memo_content+response.text
+                                }), memo_id, None)
+                            else:
+                                await manager.broadcast(json.dumps({
+                                    "type": "ai",
+                                    "status": "success",
+                                    "content":response.text
+                                }), memo_id, None)
                         except:
                             await manager.broadcast(json.dumps({
                                 "type": "ai",
