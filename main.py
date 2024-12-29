@@ -8,8 +8,7 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 import os
 from sqlalchemy import create_engine, Column, String, Text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 load_dotenv()
 
@@ -49,17 +48,19 @@ class ConnectionManager:
         self.active_connections[memo_id][user_id] = websocket
         self.user_names[user_id] = user_name
         self.user_colors[user_id] = COLORLIST[len(self.user_colors) % len(COLORLIST)]
-        await self.broadcast_users(memo_id)
+        await self.broadcast_users(memo_id, user_id, "join")
 
-    def disconnect(self, memo_id: str, user_id: str):
+    async def disconnect(self, memo_id: str, user_id: str):
         if memo_id in self.active_connections:
             self.active_connections[memo_id].pop(user_id, None)
             self.user_names.pop(user_id, None)
             self.user_colors.pop(user_id, None)
-            if not self.active_connections[memo_id]:
+            if self.active_connections[memo_id]:
+                await self.broadcast_users(memo_id, user_id, "leave")
+            else:
                 del self.active_connections[memo_id]
 
-    async def broadcast_users(self, memo_id: str):
+    async def broadcast_users(self, memo_id: str, user_id:str , status:str):
         if memo_id in self.active_connections:
             users = {
                 uid: {
@@ -68,7 +69,7 @@ class ConnectionManager:
                 }
                 for uid in self.active_connections[memo_id].keys()
             }
-            message = json.dumps({"type": "users", "users": users})
+            message = json.dumps({"type": "users", "users": users, "status": status, "user_id": user_id})
             await self.broadcast(message, memo_id)
 
     async def broadcast(self, message: str, memo_id: str, exclude_user: str = None):
@@ -110,7 +111,8 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
         if memo:
             await websocket.send_json({
                 "type": "init",
-                "content": memo.content
+                "content": memo.content,
+                "myid": user_id,
             })
         else:
             await websocket.send_json({
@@ -246,13 +248,12 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                 db.close()
 
     except WebSocketDisconnect:
-        manager.disconnect(memo_id, user_id)
+        await manager.disconnect(memo_id, user_id)
         db = SessionLocal()
         memo = db.query(Memo).filter(Memo.id == memo_id).first()
         if memo and hasattr(memo, "cursors"):
             memo.cursors.pop(user_id, None)
         db.close()
-        await manager.broadcast_users(memo_id)
 
 if __name__ == "__main__":
     import uvicorn

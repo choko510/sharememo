@@ -102,6 +102,7 @@
         <script>
             let ws;
             let memoId;
+            let myname;
             let isProcessing = false;
             let cursorPositions = {};
             let lastContent = '';
@@ -258,6 +259,7 @@
                             }
 
                             lastContent = data.content;
+                            myname = data.myid;
                             updateCharCount();
                             break;
 
@@ -291,6 +293,16 @@
                         case 'users':
                             connection_count = Object.keys(data.users).length;
                             updateUsersList(data.users);
+                            
+                            if(myname != undefined){//mynameがundefiedの場合は初回接続時
+                                name = data.user_id.split('-')[0];
+                                if (data.status == "join") {
+                                    showToast(`User-${name}さんが参加しました。`, 'success', 3500);
+                                } else if (data.status == "leave") {
+                                    showToast(`User-${name}さんが退出しました。`, 'error', 3500);
+                                }
+                            }
+
                             break;
 
                         case 'ai':
