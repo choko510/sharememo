@@ -92,7 +92,10 @@
             <div class="tooltip-item" onclick="AIreq('continued')">AIで続きを書く</div>
         </div>
 
+        <div id="toast-container"></div>
+
         <link rel="stylesheet" href="static/modal.css">
+        <link rel="stylesheet" href="static/toast.css">
         <script src="https://cdn.jsdelivr.net/npm/micromodal@0.4.10/dist/micromodal.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/diff@7.0.0/dist/diff.min.js"></script>
@@ -249,6 +252,11 @@
                     switch (data.type) {
                         case 'init': 
                             document.getElementById('editor').innerHTML = data.content;
+
+                            if(lastContent !== ""){//再接続時
+                                showToast('接続しました。', 'success', 4000);
+                            }
+
                             lastContent = data.content;
                             updateCharCount();
                             break;
@@ -298,7 +306,7 @@
                             }else if(data.status == "failure"){
                                 document.getElementById('editor').contentEditable = true;
                                 document.getElementById("tool").disabled = false;
-                                alert("正しく添削出来ませんでした。")
+                                showToast("正しく添削出来ませんでした。", "error", 5000);
                             }else if(data.status == "accept"){
                                 acceptDiff();
                             }else if(data.status == "cancel"){
@@ -310,13 +318,13 @@
 
                 ws.onclose = function () {
                     setTimeout(() => {
-                        alert('接続が切断されました。再接続します。');
+                        showToast('接続が切断されました。再接続します。', 'info', 3000);
                         connectWebSocket();
                     }, 1000);
                 };
 
                 ws.onerror = function() {
-                    alert('接続エラーが発生しました。ページを再読み込みしてください。');
+                    showToast('接続エラーが発生しました。ページを再読み込みしてください。', 'error', 2500);
                 };
             }
 
@@ -402,7 +410,6 @@
 
                 let hasBold = false;
                 if (style === 'bold') {
-                    // 選択範囲内に太字があるかチェック
                     Array.from(contents.childNodes).forEach(node => {
                         if (node.nodeType === Node.ELEMENT_NODE && 
                             node.tagName === 'SPAN' && 
@@ -452,7 +459,12 @@
                 clearTimeout(sendTimeout);
 
                 sendTimeout = setTimeout(() => {
-                    const currentContent = document.getElementById('editor').innerHTML;
+                    const editor = document.getElementById('editor');
+
+                    const cursors = editor.querySelectorAll('.cursor');
+                    cursors.forEach(cursor => cursor.remove());
+                    
+                    const currentContent = editor.innerHTML;
                     if (ws && ws.readyState === WebSocket.OPEN && currentContent !== lastContent) {
                         lastContent = currentContent;
                         ws.send(JSON.stringify({
@@ -520,7 +532,7 @@
                 navigator.clipboard.writeText(allText).then(() => {
                     console.log("copy");
                 }).catch(err => {
-                    alert('コピーに失敗しました。');
+                    showToast('コピーに失敗しました。', 'error', 5000);
                     console.error('コピーエラー:', err);
                 });
             }
@@ -528,9 +540,9 @@
             function copyShareUrl() {
                 const url = document.getElementById('shareUrl').textContent;
                 navigator.clipboard.writeText(url).then(() => {
-                    alert('URLをコピーしました');
+                    showToast('URLをコピーしました', 'success', 5000);
                 }).catch(err => {
-                    alert('コピーに失敗しました');
+                    showToast('コピーに失敗しました', 'error', 5000);
                     console.error('コピーエラー:', err);
                 });
             }
@@ -635,6 +647,44 @@
                     tooltipContainer.style.display = 'none';
                 }
             });
+
+            function showToast(message, type, duration) {
+                const toastContainer = document.getElementById('toast-container');
+
+                const toast = document.createElement('div');
+                toast.classList.add('toast', type);
+
+                const messageText = document.createElement('span');
+                messageText.innerText = message;
+
+                const closeButton = document.createElement('span');
+                closeButton.innerHTML = '&times;';
+                closeButton.classList.add('close-btn');
+                closeButton.onclick = function () {
+                    toast.classList.remove('show');
+                    setTimeout(() => {
+                        toast.remove();
+                    }, 300);
+                };
+
+                toast.appendChild(messageText);
+                toast.appendChild(closeButton);
+
+                toastContainer.appendChild(toast);
+
+                setTimeout(() => {
+                    toast.classList.add('show');
+                }, 100);
+
+                if (duration > 0) {
+                    setTimeout(() => {
+                        toast.classList.remove('show');
+                        setTimeout(() => {
+                            toast.remove();
+                        }, 300);
+                    }, duration);
+                }
+            }
 
         </script>
     </body>

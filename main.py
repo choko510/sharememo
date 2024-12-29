@@ -201,7 +201,7 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                             #制約条件
                                 元の文章の意図や構造を保ったまま続きを書いてください。
                                 大きく改行の位置関係を変更しないでください。
-                                出力形式は、増やす前の文章を含めた全ての文章を出力してください。
+                                出力形式は、続きの文章のみを出力してください。
                                 修正文章に含まれるHTMLタグは、基本的にそのまま残してください。ただし、明確に不要な場合のみ削除してください。
                                 改行は必ず<br>タグを使用してください。
                             #対象文章
@@ -219,7 +219,7 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                             await manager.broadcast(json.dumps({
                                 "type": "ai",
                                 "status": "success",
-                                "content":response.text
+                                "content":memo_content+response.text
                             }), memo_id, None)
                         except:
                             await manager.broadcast(json.dumps({
