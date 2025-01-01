@@ -1,14 +1,17 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Response, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from typing import Dict, Set, List
+from typing import Dict, List
 import json
 import uuid
+import time
 import google.generativeai as genai
 from dotenv import load_dotenv
 import os
-from sqlalchemy import create_engine, Column, String, Text
+from sqlalchemy import create_engine, Column, String, Text, Integer 
 from sqlalchemy.orm import declarative_base, sessionmaker
+from pydantic import BaseModel, field_validator
 
 load_dotenv()
 
@@ -23,6 +26,9 @@ class Memo(Base):
     __tablename__ = "memos"
     id = Column(String, primary_key=True)
     content = Column(Text, default="")
+    updated_at = Column(Integer, default=0)
+    created_at = Column(Integer, default=0)
+    created_user = Column(String, default="")
 
 Base.metadata.create_all(bind=engine)
 
@@ -84,14 +90,33 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 async def get():
-    return FileResponse("static/index.html")
+    return FileResponse("static/panel.html")
 
-@app.get("/new")
-async def create_memo():
+@app.get("/edit")
+async def get():
+    return FileResponse("static/editor/main.html")
+
+@app.get("/edit/new")
+async def create_memo(request: Request, response: Response):
     memo_id = str(uuid.uuid4())
+    current_time = int(time.time())
+
+    userid = request.cookies.get("userid")
+    if not userid:
+        response.set_cookie(
+            key="userid",
+            value= str(uuid.uuid4())[:6],
+            max_age=60*60*24*365,
+        )
+    
     db = SessionLocal()
     try:
-        new_memo = Memo(id=memo_id)
+        new_memo = Memo(
+            id=memo_id,
+            created_at=current_time,
+            updated_at=current_time,
+            created_user=userid
+        )
         db.add(new_memo)
         db.commit()
     finally:
@@ -100,7 +125,7 @@ async def create_memo():
 
 @app.websocket("/ws/{memo_id}")
 async def websocket_endpoint(websocket: WebSocket, memo_id: str):
-    user_id = str(uuid.uuid4())
+    user_id = str(uuid.uuid4())#ここもcookieから取得するように変更する
     user_name = f"User-{user_id[:6]}"
     
     await manager.connect(websocket, memo_id, user_id, user_name)
@@ -130,6 +155,7 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                 memo = db.query(Memo).filter(Memo.id == memo_id).first()
                 if memo:
                     memo.content = message["content"]
+                    memo.updated_at = int(time.time())
                     db.commit()
                     await manager.broadcast(data, memo_id, user_id)
                 db.close()
@@ -219,16 +245,23 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                             model = genai.GenerativeModel("gemini-1.5-flash")
                             response = model.generate_content(input_text)
                             if message["req"] == "continued":
+                                new_content = memo_content + response.text
+                                memo.content = new_content
+                                memo.updated_at = int(time.time())
+                                db.commit()
                                 await manager.broadcast(json.dumps({
                                     "type": "ai",
                                     "status": "success",
-                                    "content":memo_content+response.text
+                                    "content": new_content
                                 }), memo_id, None)
                             else:
+                                memo.content = response.text
+                                memo.updated_at = int(time.time())
+                                db.commit()
                                 await manager.broadcast(json.dumps({
                                     "type": "ai",
                                     "status": "success",
-                                    "content":response.text
+                                    "content": response.text
                                 }), memo_id, None)
                         except:
                             await manager.broadcast(json.dumps({
@@ -255,6 +288,75 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
             memo.cursors.pop(user_id, None)
         db.close()
 
+@app.post("api/memo/{memo_id}/delete")
+async def delete_memo(memo_id: str):
+    db = SessionLocal()
+    try:
+        memo = db.query(Memo).filter(Memo.id == memo_id).first()
+        if memo is None:
+            raise HTTPException(status_code=404, detail="Memo not found")
+        
+        if memo_id in manager.active_connections:
+            connections = manager.active_connections[memo_id].copy()
+            for user_id in connections:
+                await manager.disconnect(memo_id, user_id)
+
+        db.delete(memo)
+        db.commit()
+        
+        return JSONResponse(
+            content={"status": "success", "message": "ok"},
+            status_code=200
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+class MemoIdsRequest(BaseModel):
+    memo_ids: List[str]
+
+    @field_validator('memo_ids')
+    @classmethod
+    def validate_memo_ids(cls, v: List[str]) -> List[str]:
+        if len(v) > 150:
+            raise ValueError('Max request size is 150')
+        if len(v) == 0:
+            raise ValueError('Min request size is 1')
+        return v
+
+@app.post("api/memo/info")
+async def get_memos_info(request: MemoIdsRequest):
+    db = SessionLocal()
+    try:
+        results: Dict[str, dict] = {}
+        memos = db.query(Memo).filter(Memo.id.in_(request.memo_ids)).all()
+        
+        for memo in memos:
+            results[memo.id] = {
+                "memo_id": memo.id,
+                "created_at": memo.created_at,
+                "updated_at": memo.updated_at,
+                "status": "found"
+            }
+        
+        for memo_id in request.memo_ids:
+            if memo_id not in results:
+                results[memo_id] = {
+                    "memo_id": memo_id,
+                    "status": "not_found"
+                }
+        
+        return {
+            "memos": results
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="localhost", port=8080)
+    uvicorn.run(app, host="localhost", port=8081)

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ja">
+    <head>
+        <title>メインパネル</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1.0">
+        <link rel="stylesheet" href="static/panel.css">
+        <link rel="prefetch" href="static/editor/main.css">
+    </head>
+    <body>
+        <div id="list"></div>
+        <a href="javascript:make();" id="iconback">
+            <div class="write"></div>
+        </a>
+
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/notie/dist/notie.min.css">
+        <script src="https://cdn.jsdelivr.net/npm/notie/dist/notie.min.js"></script>
+        <script>
+
+            // 削除
+            async function delete_nikki() {
+                notie.confirm({
+                    text: "本当に削除しますか？",
+                    submitText: "はい",
+                    cancelText: "キャンセル",
+                    submitCallback: async () => {
+                        try {
+                            const response = await fetch("edit/remove.php", {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/x-www-form-urlencoded',
+                                },
+                                body: `user=${Cookies.get('id')}`
+                            });
+                            const data = await response.json();
+                            
+                            if (data.status === "success") {
+                                notie.alert({type: 'success', text: '削除しました', time: 4});
+                            } else {
+                                notie.alert({type: "error", text: data.msg, time: 7});
+                            }
+                        } catch (error) {
+                            notie.alert({type: "error", text: "エラーが発生しました", time: 7});
+                        }
+                    }
+                });
+            }
+
+            // リスト取得と描画
+            async function list() {
+                const datenow = new Date().getTime();
+                const id = Cookies.get('id');
+                
+                if (!id) {
+                    notie.alert({
+                        type: "error",
+                        text: '<a href="account/login/" class="notie-link">ログイン</a>または<a href="account/singup/" class="notie-link">新規作成</a>してください',
+                        time: 10
+                    });
+                    return;
+                }
+
+                const url = `user/list/${id}/list.json`;
+                const listElement = document.getElementById('list');
+
+                try {
+                    const response = await fetch(url);
+                    
+                    if (response.status === 404) {
+                        try {
+                            const addResponse = await fetch("edit/add.php", {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/x-www-form-urlencoded',
+                                },
+                                body: `user=${Cookies.get('account')}`
+                            });
+                            const data = await addResponse.json();
+                            
+                            if (data.status === "success") {
+                                notie.alert({type: 'success', text: '追加しました', time: 4});
+                            } else {
+                                notie.alert({type: "error", text: data.msg, time: 7});
+                            }
+                        } catch (error) {
+                            notie.alert({type: "error", text: "通信エラーが発生しました", time: 7});
+                        }
+                        return;
+                    }
+
+                    if (response.status === 200 && response.headers.get("Content-Length") === "0") {
+                        listElement.innerHTML = '<a href="javascript:make();"><div class="start_msg">まだありません</div></a>';
+                        return;
+                    }
+
+                    const data = await response.json();
+                    listElement.innerHTML = '';
+
+                    for (const item of data) {
+                        const unixtime = item.time * 1000;
+                        const time = new Date(unixtime);
+                        const ms = datenow - unixtime;
+                        const days = Math.floor(ms / (1000*60*60*24));
+                        const pach = "." + item.pach;
+                        const title = item.title.length === 0 ? "タイトル無し" : item.title + pach;
+                        
+                        listElement.innerHTML += `
+                            <a href="edit?id=${item.pach}">
+                                <div class="nikki">
+                                    <p class="title">${title}</p>
+                                    <p>${time.toLocaleDateString()} ${days}日前</p>
+                                </div>
+                            </a>
+                            <div class="space"></div>
+                        `;
+                    }
+                } catch (error) {
+                    notie.alert({type: "error", text: "通信エラーが発生しました", time: 7});
+                }
+            }
+
+            function make() {
+                location.href = "edit";
+            }
+
+        </script>
+    </body>
+</html>

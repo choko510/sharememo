@@ -5,7 +5,7 @@
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>リアルタイムメモアプリ</title>
-        <link rel="stylesheet" href="static/main.css">
+        <link rel="stylesheet" href="static/editor/main.css">
     </head>
 
     <body>
@@ -94,8 +94,8 @@
 
         <div id="toast-container"></div>
 
-        <link rel="stylesheet" href="static/modal.css">
-        <link rel="stylesheet" href="static/toast.css">
+        <link rel="stylesheet" href="static/editor/modal.css">
+        <link rel="stylesheet" href="static/editor/toast.css">
         <script src="https://cdn.jsdelivr.net/npm/micromodal@0.4.10/dist/micromodal.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/diff@7.0.0/dist/diff.min.js"></script>
@@ -223,7 +223,7 @@
                 memoId = urlParams.get('id');
 
                 if (!memoId) {
-                    const response = await fetch('/new');
+                    const response = await fetch('/edit/new');
                     const data = await response.json();
                     memoId = data.memo_id;
                     window.history.pushState({}, '', `?id=${memoId}`);
@@ -335,7 +335,7 @@
                 };
 
                 ws.onerror = function() {
-                    showToast('接続エラーが発生しました。ページを再読み込みしてください。', 'error', 2500);
+                    showToast('接続エラーが発生しました。ページを再読み込みしてください。', 'error', 2800);
                 };
             }
 

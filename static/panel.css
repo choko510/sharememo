@@ -1,0 +1,135 @@
+* {
+    margin: 0;
+}
+
+*, ::after, ::before {
+    box-sizing: border-box;
+}
+
+body {
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    font-size: 110%;
+    font-family: gmFont;
+    margin: 0;
+    padding: 0;
+    height: 100%;
+}
+
+h1, h2, h3, h4, h5, h6, p {
+    overflow-wrap: break-word;
+}
+
+h1 {
+    font-size: 140%;
+}
+
+a {
+    text-decoration: none;
+    color: #000;
+}
+
+button, input, select, textarea {
+    font: inherit;
+}
+
+body {
+    background-color: #FFFFFB;
+}
+
+#account {
+    margin-left: 10px;
+}
+
+.btn {
+    white-space: nowrap;
+}
+
+.space {
+    padding: 7px;
+}
+
+#list {
+    padding: 10px 5px 10px;
+}
+
+.nikki {
+    padding: 18px;
+    border: solid 3px #232323;
+    border-radius: 13px;
+    white-space: nowrap;
+    transition: 0.5s;
+}
+
+.nikki:hover {
+    transition: 0.5s;
+    box-shadow: 5px 5px 15px -4px #c1c1c1;
+}
+
+.title {
+    position: relative;
+    left: -15px;
+    top: -15px;
+    font-size: 150%;
+}
+
+.delete {
+    position: absolute;
+    right: 20px;
+}
+
+.start_msg {
+    font-size: 170%;
+    text-align: center;
+    border: solid 3px #232323;
+    border-radius: 13px;
+    padding: 50px;
+}
+
+.notie-link {
+    color: rgb(201, 201, 201);
+}
+
+#iconback{
+    position:fixed;
+    display: block;
+    bottom: 27px;
+    right: 31px;
+    background-color: #ffffff;
+    border: 3px solid rgb(58, 58, 58);
+    border-radius: 100%;
+    padding: 30px;
+    box-shadow: 4px 4px 15px -5px #777777;
+    transition: .2s;
+}
+
+.write {
+    position:fixed;
+    bottom: 40px;
+    right: 40px;
+    width: 40px;
+    height: auto;
+    content:url("data:image/svg+xml;charset=utf8,%3Csvg%20enable-background%3D%22new%200%200%20458.018%20458.018%22%20version%3D%221.1%22%20viewBox%3D%220%200%20458.02%20458.02%22%20xml%3Aspace%3D%22preserve%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%0A%09%09%09%3Cpath%20d%3D%22m307.63%20425.74h2e-3c0%201.551-1.262%202.813-2.814%202.813h-268.71c-1.552%200-2.814-1.262-2.814-2.813v-393.46c0-1.552%201.262-2.814%202.814-2.814h268.71c1.552%200%202.814%201.262%202.814%202.814v27.411l29.442-28.412c-0.532-17.338-14.792-31.281-32.256-31.281h-268.71c-17.8%200-32.282%2014.481-32.282%2032.282v393.46c0%2017.799%2014.481%2032.281%2032.281%2032.281h268.71c17.8%200%2032.281-14.481%2032.281-32.281v-138.5l-29.468%2029.467v109.04z%22%2F%3E%0A%09%09%09%3Cpath%20d%3D%22m55.319%20345.51c0%208.137%206.597%2014.734%2014.734%2014.734h51.527c-5.48-8.721-7.756-19.103-6.32-29.467h-45.207v-1e-3c-8.137%200-14.734%206.597-14.734%2014.734z%22%2F%3E%0A%09%09%09%3Cpath%20d%3D%22m131.13%20256.83h-61.081c-8.137%200-14.734%206.597-14.734%2014.734s6.597%2014.734%2014.734%2014.734h54.697l6.384-29.468z%22%2F%3E%0A%09%09%09%3Cpath%20d%3D%22m184.44%20182.88h-114.39c-8.137%200-14.734%206.597-14.734%2014.734s6.597%2014.734%2014.734%2014.734h84.923l29.468-29.468z%22%2F%3E%0A%09%09%09%3Cpath%20d%3D%22m258.39%20108.94h-188.34c-8.137%200-14.734%206.597-14.734%2014.734s6.597%2014.734%2014.734%2014.734h158.87l29.468-29.468z%22%2F%3E%0A%09%09%09%3Cpath%20d%3D%22m436.81%2060.304c-24.123-24.836-63.396-24.718-87.457-0.657-13.58%2013.58-174.93%20174.93-182.48%20182.48-1.947%201.946-3.375%204.5-3.982%207.299l-18.249%2084.244c-1.045%204.823%200.389%209.944%203.982%2013.538%203.569%203.57%208.682%205.034%2013.538%203.982l84.244-18.249c2.772-0.601%205.386-2.066%207.299-3.982l182.48-182.48c23.921-23.919%2023.881-62.243%200.625-86.175zm-258.53%20257.24%207.686-35.482%2027.796%2027.796-35.482%207.686zm237.06-191.91-172.06%20172.06-45.158-45.159%20172.06-172.06c12.872-12.873%2033.93-12.445%2046.257%201.154%2011.313%2012.465%2011.061%2031.846-1.098%2044.005z%22%2F%3E%0A%3C%2Fsvg%3E%0A");
+    transition: .2s;
+}
+
+#iconback:hover  {
+    bottom: 25px;
+    right: 29px;
+    padding: 32px;
+    transition: .2s;
+}
+
+@media only screen and (max-width: 370px) {
+    .nikki {
+        margin: -5px;
+        width: 100vw;
+        border: unset;
+        border-bottom: solid #232323 2px;
+        border-radius: unset;
+    }
+    .title {
+        position: relative;
+        left: -15px;
+    }
+}
