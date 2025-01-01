@@ -96,6 +96,7 @@
 
         <link rel="stylesheet" href="static/editor/modal.css">
         <link rel="stylesheet" href="static/editor/toast.css">
+        <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.3/dist/purify.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/micromodal@0.4.10/dist/micromodal.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/diff@7.0.0/dist/diff.min.js"></script>
@@ -109,6 +110,20 @@
             let connection_count = 0;
             let oldText = '';
             let newText = '';
+
+            DOMPurify.setConfig({
+                ALLOWED_TAGS: ['div', 'span', 'p', 'br'],
+                ALLOWED_ATTR: ['style', 'class', 'data-name', 'contenteditable'],
+                ALLOW_DATA_ATTR: true
+            });
+
+            function sanitizeContent(content) {
+                return DOMPurify.sanitize(content, {
+                    ALLOWED_STYLES: {
+                        '*': ['color', 'background-color', 'font-size', 'font-weight', 'text-decoration']
+                    }
+                });
+            }
 
             document.addEventListener("DOMContentLoaded", () => {
                 const editor = document.getElementById('editor');
@@ -238,7 +253,7 @@
                 const text = event.clipboardData.getData('text/plain');
                 const plainText = text.replace(/<\/?[^>]+(>|$)/g, "");
                 const lines = plainText.split('\n');
-                const formattedText = lines.join('<br>');
+                const formattedText = sanitizeContent(lines.join('<br>'));
                 document.execCommand('insertHTML', false, formattedText);
                 updateCharCount();
             }
@@ -252,7 +267,7 @@
 
                     switch (data.type) {
                         case 'init': 
-                            document.getElementById('editor').innerHTML = data.content;
+                            document.getElementById('editor').innerHTML = sanitizeContent(data.content);
 
                             if(lastContent !== ""){//再接続時
                                 showToast('接続しました。', 'success', 4000);
@@ -270,9 +285,9 @@
                             break;
 
                         case 'content':
-                            if (!isProcessing && data.content !== lastContent) { 
-                                document.getElementById('editor').innerHTML = data.content;
-                                lastContent = data.content; 
+                            if (!isProcessing && data.content !== lastContent) {
+                                document.getElementById('editor').innerHTML = sanitizeContent(data.content);
+                                lastContent = data.content;
                                 updateCharCount();
                                 Object.entries(cursorPositions).forEach(([userId, data]) => {
                                     updateCursor(userId, data.position, data.name, data.color);
@@ -582,9 +597,9 @@
 
             function showDiff(newText) {
                 const oldText = document.getElementById('editor').innerHTML;
-
-                const diff = Diff.diffWords(oldText, newText);
-
+                const sanitizedNewText = sanitizeContent(newText);
+                const diff = Diff.diffWords(oldText, sanitizedNewText);
+                
                 const diffResult = document.getElementById('editor');
                 diffResult.innerHTML = '';
 
@@ -592,16 +607,13 @@
                     const words = part.value.split(' ');
                     words.forEach((word, index) => {
                         if (word === '' && index === words.length - 1) return;
-
                         const span = document.createElement('span');
-
                         if (part.added) {
                             span.classList.add('added');
                         } else if (part.removed) {
                             span.classList.add('removed');
                         }
-
-                        span.innerHTML = word + ' ';
+                        span.innerHTML = sanitizeContent(word + ' ');
                         diffResult.appendChild(span);
                     });
                 });
