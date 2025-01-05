@@ -15,6 +15,12 @@ from pydantic import BaseModel, field_validator
 
 load_dotenv()
 
+if not os.getenv("GEMINI_APIKEY") or os.getenv("GEMINI_APIKEY") == "":
+    if not os.path.exists(".env"):
+        raise ValueError("Please create .env file")
+    else:
+        raise ValueError("Please set GEMINI_APIKEY in .env file")
+
 genai.configure(api_key=os.getenv("GEMINI_APIKEY"))
 
 DATABASE_URL = "sqlite:///./memo.db"
@@ -125,7 +131,17 @@ async def create_memo(request: Request, response: Response):
 
 @app.websocket("/ws/{memo_id}")
 async def websocket_endpoint(websocket: WebSocket, memo_id: str):
-    user_id = str(uuid.uuid4())#ここもcookieから取得するように変更する
+    cookies = websocket.cookies
+    user_id = cookies.get("userid")
+    
+    if not user_id:
+        await websocket.send_json({
+            "type": "error",
+            "status":"nocookie"
+        })
+        await websocket.close()
+        return
+    
     user_name = f"User-{user_id[:6]}"
     
     await manager.connect(websocket, memo_id, user_id, user_name)
