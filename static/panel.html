@@ -18,7 +18,7 @@
         <script>
 
             // 削除
-            async function delete_nikki() {
+            async function delete_memo() {
                 notie.confirm({
                     text: "本当に削除しますか？",
                     submitText: "はい",
@@ -49,18 +49,7 @@
             // リスト取得と描画
             async function list() {
                 const datenow = new Date().getTime();
-                const id = Cookies.get('id');
-                
-                if (!id) {
-                    notie.alert({
-                        type: "error",
-                        text: '<a href="account/login/" class="notie-link">ログイン</a>または<a href="account/singup/" class="notie-link">新規作成</a>してください',
-                        time: 10
-                    });
-                    return;
-                }
 
-                const url = `user/list/${id}/list.json`;
                 const listElement = document.getElementById('list');
 
                 try {
@@ -105,7 +94,7 @@
                         const title = item.title.length === 0 ? "タイトル無し" : item.title + pach;
                         
                         listElement.innerHTML += `
-                            <a href="edit?id=${item.pach}">
+                            <a href="editor?id=${item.pach}">
                                 <div class="nikki">
                                     <p class="title">${title}</p>
                                     <p>${time.toLocaleDateString()} ${days}日前</p>

@@ -244,6 +244,13 @@
                     window.history.pushState({}, '', `?id=${memoId}`);
                 }
 
+                const EditList = JSON.parse(localStorage.getItem('EditList') || '[]');
+
+                if (!EditList.includes(memoId)) {
+                    EditList.push(memoId);
+                    localStorage.setItem('EditList', JSON.stringify(EditList));
+                }
+
                 document.getElementById('shareUrl').textContent = window.location.href;
                 connectWebSocket();
             }
@@ -281,6 +288,8 @@
                         case 'error':
                             if("notfound"==data.status){
                                 window.location.href = '/';
+                            }else if ("nocookie"==data.status){
+                                location.reload();
                             }
                             break;
 
@@ -520,7 +529,6 @@
                             }));
                         }
                     }
-
                 }
             }
 

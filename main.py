@@ -95,11 +95,25 @@ manager = ConnectionManager()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
-async def get():
+async def get(request: Request, response: Response):
+    userid = request.cookies.get("userid")
+    if not userid:
+        response.set_cookie(
+            key="userid",
+            value= str(uuid.uuid4())[:6],
+            max_age=60*60*24*365,
+        )
     return FileResponse("static/panel.html")
 
 @app.get("/edit")
-async def get():
+async def get(request: Request, response: Response):
+    userid = request.cookies.get("userid")
+    if not userid:
+        response.set_cookie(
+            key="userid",
+            value= str(uuid.uuid4())[:6],
+            max_age=60*60*24*365,
+        )
     return FileResponse("static/editor/main.html")
 
 @app.get("/edit/new")
