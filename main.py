@@ -318,7 +318,7 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
             memo.cursors.pop(user_id, None)
         db.close()
 
-@app.post("api/memo/{memo_id}/delete")
+@app.post("/api/memo/{memo_id}/delete")
 async def delete_memo(memo_id: str):
     db = SessionLocal()
     try:
@@ -356,7 +356,7 @@ class MemoIdsRequest(BaseModel):
             raise ValueError('Min request size is 1')
         return v
 
-@app.post("api/memo/info")
+@app.post("/api/memo/info")
 async def get_memos_info(request: MemoIdsRequest):
     db = SessionLocal()
     try:
