@@ -7,42 +7,13 @@
 }
 
 body {
-    line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
-    font-size: 110%;
-    font-family: gmFont;
-    margin: 0;
-    padding: 0;
-    height: 100%;
-}
-
-h1, h2, h3, h4, h5, h6, p {
-    overflow-wrap: break-word;
-}
-
-h1 {
-    font-size: 140%;
+    background-color: #f5f5f5;
+    color: #343537;
 }
 
 a {
     text-decoration: none;
-    color: #000;
-}
-
-button, input, select, textarea {
-    font: inherit;
-}
-
-body {
-    background-color: #FFFFFB;
-}
-
-#account {
-    margin-left: 10px;
-}
-
-.btn {
-    white-space: nowrap;
+    color: #343537;
 }
 
 .space {
@@ -55,7 +26,8 @@ body {
 
 .nikki {
     padding: 18px;
-    border: solid 3px #232323;
+    border: 1px solid #ddd;
+    background-color: white;
     border-radius: 13px;
     white-space: nowrap;
     transition: 0.5s;
@@ -68,26 +40,8 @@ body {
 
 .title {
     position: relative;
-    left: -15px;
-    top: -15px;
+    top: -5px;
     font-size: 150%;
-}
-
-.delete {
-    position: absolute;
-    right: 20px;
-}
-
-.start_msg {
-    font-size: 170%;
-    text-align: center;
-    border: solid 3px #232323;
-    border-radius: 13px;
-    padding: 50px;
-}
-
-.notie-link {
-    color: rgb(201, 201, 201);
 }
 
 #iconback{
