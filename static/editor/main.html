@@ -10,12 +10,9 @@
 
     <body>
         <div class="container">
-
-            <div class="users-list">
-                接続中のユーザー: <span id="activeUsers"></span>
-            </div>
-
             <div class="controls">
+
+                <a href="../" class="format-button" style="color: black;text-decoration: none;">メニュー</a>
 
                 <label for="fontSize">文字サイズ:
                     <select id="fontSize">
@@ -66,6 +63,7 @@
                 <span class="countbox">文字数: <span id="charCount">0</span></span> 
                 <button onclick="copyAll()" class="format-button">全てをコピー</button>
                 <button onclick="openModal()" class="format-button">共有</button>
+                <span class="countbox">接続中のユーザー: <span id="activeUsers"></span></span>
             </div>
             
         </div>
