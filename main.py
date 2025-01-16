@@ -95,26 +95,28 @@ manager = ConnectionManager()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
-async def get(request: Request, response: Response):
+async def get(request: Request):
+    response = FileResponse("static/panel.html")
     userid = request.cookies.get("userid")
     if not userid:
         response.set_cookie(
             key="userid",
-            value= str(uuid.uuid4())[:6],
+            value=str(uuid.uuid4())[:6],
             max_age=60*60*24*365,
         )
-    return FileResponse("static/panel.html")
+    return response
 
 @app.get("/edit")
-async def get(request: Request, response: Response):
+async def get(request: Request):
+    response = FileResponse("static/editor/main.html")
     userid = request.cookies.get("userid")
     if not userid:
         response.set_cookie(
             key="userid",
-            value= str(uuid.uuid4())[:6],
+            value=str(uuid.uuid4())[:6],
             max_age=60*60*24*365,
         )
-    return FileResponse("static/editor/main.html")
+    return response
 
 @app.get("/edit/new")
 async def create_memo(request: Request, response: Response):
@@ -149,6 +151,7 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
     user_id = cookies.get("userid")
     
     if not user_id:
+        await websocket.accept()
         await websocket.send_json({
             "type": "error",
             "status":"nocookie"
