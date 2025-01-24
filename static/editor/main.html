@@ -340,6 +340,10 @@
                                 document.getElementById('editor').contentEditable = true;
                                 document.getElementById("tool").disabled = false;
                                 showToast("正しく添削出来ませんでした。", "error", 5000);
+                            }else if(data.status == "nochange"){
+                                document.getElementById('editor').contentEditable = true;
+                                document.getElementById("tool").disabled = false;
+                                showToast("変更箇所がありませんでした。", "error", 5000);
                             }else if(data.status == "accept"){
                                 acceptDiff();
                             }else if(data.status == "cancel"){

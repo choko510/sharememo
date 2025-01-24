@@ -239,6 +239,7 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                                 出力形式は、添削後の文章のみとしてください。
                                 修正文章に含まれるHTMLタグは、基本的にそのまま残してください。ただし、明確に不要な場合のみ削除してください。
                                 改行は必ず<br>タグを使用してください。
+                                変更点がない場合は対象の文章を含まずに、"nochange"とだけ出力して下さい。
                             #修正対象文章
                                 {memo_content}
                             '''
@@ -252,6 +253,7 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                                 出力形式は、増やした後の文章のみとしてください。
                                 修正文章に含まれるHTMLタグは、基本的にそのまま残してください。ただし、明確に不要な場合のみ削除してください。
                                 改行は必ず<br>タグを使用してください。
+                                変更点がない場合は対象の文章を含まずに、"nochange"とだけ出力して下さい。
                             #対象文章 
                                 {memo_content}
                             '''
@@ -277,6 +279,11 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                         try:
                             model = genai.GenerativeModel("gemini-1.5-flash")
                             response = model.generate_content(input_text)
+                            if response.text == "nochange":
+                                await manager.broadcast(json.dumps({
+                                    "type": "ai",
+                                    "status": "nochange",
+                                }), memo_id, None)
                             if message["req"] == "continued":
                                 new_content = memo_content + response.text
                                 memo.content = new_content
