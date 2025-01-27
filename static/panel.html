@@ -18,32 +18,38 @@
         <script>
 
             // 削除
-            async function delete_memo() {
-                notie.confirm({
-                    text: "本当に削除しますか？",
-                    submitText: "はい",
-                    cancelText: "キャンセル",
-                    submitCallback: async () => {
-                        try {
-                            const response = await fetch("edit/remove.php", {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/x-www-form-urlencoded',
-                                },
-                                body: `user=${Cookies.get('id')}`
-                            });
-                            const data = await response.json();
-                            
-                            if (data.status === "success") {
-                                notie.alert({type: 'success', text: '削除しました', time: 4});
-                            } else {
-                                notie.alert({type: "error", text: data.msg, time: 7});
+            async function delete_memo(memoId,owner){
+                if(owner == "true"){
+                    notie.confirm({
+                        text: "本当に削除しますか？",
+                        submitText: "はい",
+                        cancelText: "キャンセル",
+                        submitCallback: async () => {
+                            try {
+                                const response = await fetch(`/api/memo/${memo_id}/delete`, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                    },
+                                });
+                                const data = await response.json();
+                                
+                                if (data.status === "success") {
+                                    notie.alert({type: 'success', text: '削除しました', time: 4});
+                                } else {
+                                    notie.alert({type: "error", text: "エラーが発生しました", time: 7});
+                                }
+                            } catch (error) {
+                                notie.alert({type: "error", text: "エラーが発生しました", time: 7});
                             }
-                        } catch (error) {
-                            notie.alert({type: "error", text: "エラーが発生しました", time: 7});
                         }
-                    }
-                });
+                    });
+                }else{
+                    editlist = editlist.filter(e => e !== memoId);
+                    localStorage.setItem('EditList', JSON.stringify(editlist));
+                    notie.alert({type: 'success', text: '非表示にしました', time: 4});
+                }
+    
             }
 
             // リスト取得と描画
@@ -59,7 +65,6 @@
                 editlist = JSON.parse(editlist);
                 
                 try {
-                    // Call the new memo info API with the editlist IDs
                     const response = await fetch("api/memo/info", {
                         method: 'POST',
                         headers: {
@@ -89,17 +94,24 @@
                                     timeDisplay = `${hours}時間前`;
                                 } else {
                                     const minutes = Math.floor(ms / (1000 * 60));
-                                    timeDisplay = `${Math.max(1, minutes)}分前`; // 1分未満の場合は1分前と表示
+                                    timeDisplay = `${Math.max(1, minutes)}分前`;
                                 }
                             }
 
                             const title = "編集ID:" + memoId;
+
+                            if(memoId.owner="true"){
+                                const delstatus = "削除"
+                            }else{
+                                const delstatus = "非表示"
+                            }
 
                             listElement.innerHTML += `
                                 <a href="edit?id=${memoId}">
                                     <div class="nikki">
                                         <p class="title">${title}</p>
                                         <p>最終編集: ${time.toLocaleDateString()} ${timeDisplay}</p>
+                                        <a herf="javascript:delete_memo('${memoId},${memoId.owner}')">${delstatus}</a>
                                     </div>
                                 </a>
                                 <div class="space"></div>

@@ -264,6 +264,7 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                             #制約条件
                                 元の文章の意図や構造を保ったまま続きを書いてください。
                                 大きく改行の位置関係を変更しないでください。
+                                元の文章は絶対に変更しないで下さい。
                                 出力形式は、続きの文章のみを出力してください。
                                 修正文章に含まれるHTMLタグは、基本的にそのまま残してください。ただし、明確に不要な場合のみ削除してください。
                                 改行は必ず<br>タグを使用してください。
@@ -275,11 +276,10 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                                 "type": "ai",
                                 "status": "failure",
                             }), memo_id, None)
-
                         try:
                             model = genai.GenerativeModel("gemini-1.5-flash")
                             response = model.generate_content(input_text)
-                            if response.text == "nochange":
+                            if response.text == "nochange" or input_text == response.text:
                                 await manager.broadcast(json.dumps({
                                     "type": "ai",
                                     "status": "nochange",
@@ -372,12 +372,19 @@ async def get_memos_info(request: MemoIdsRequest):
     try:
         results: Dict[str, dict] = {}
         memos = db.query(Memo).filter(Memo.id.in_(request.memo_ids)).all()
-        
+        userid = request.cookies.get("userid")
+        if not userid:
+            userid = None
         for memo in memos:
+            if memo.created_user == userid:
+                owner == True
+            else:
+                owner == False
             results[memo.id] = {
                 "memo_id": memo.id,
                 "created_at": memo.created_at,
                 "updated_at": memo.updated_at,
+                "owner":owner,
                 "status": "found"
             }
         
