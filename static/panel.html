@@ -44,10 +44,14 @@
                             }
                         }
                     });
+                    list();
                 }else{
+                    let editlist = localStorage.getItem('EditList');
+                    editlist = JSON.parse(editlist);
                     editlist = editlist.filter(e => e !== memoId);
                     localStorage.setItem('EditList', JSON.stringify(editlist));
                     notie.alert({type: 'success', text: '非表示にしました', time: 4});
+                    list()
                 }
     
             }
@@ -100,10 +104,10 @@
 
                             const title = "編集ID:" + memoId;
 
-                            if(memoId.owner="true"){
-                                const delstatus = "削除"
+                            if(memoId.owner){
+                                delstatus = "削除"
                             }else{
-                                const delstatus = "非表示"
+                                delstatus = "非表示"
                             }
 
                             listElement.innerHTML += `
@@ -111,7 +115,7 @@
                                     <div class="nikki">
                                         <p class="title">${title}</p>
                                         <p>最終編集: ${time.toLocaleDateString()} ${timeDisplay}</p>
-                                        <a herf="javascript:delete_memo('${memoId},${memoId.owner}')">${delstatus}</a>
+                                        <a href="javascript:delete_memo('${memoId}','${memoId.owner}')">${delstatus}</a>
                                     </div>
                                 </a>
                                 <div class="space"></div>
@@ -122,6 +126,8 @@
                         }
                     }
                 } catch (error) {
+                    console.log(error);
+                    
                     notie.alert({ type: "error", text: "通信エラーが発生しました", time: 7 });
                 }
             }

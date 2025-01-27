@@ -367,15 +367,16 @@ class MemoIdsRequest(BaseModel):
         return v
 
 @app.post("/api/memo/info")
-async def get_memos_info(request: MemoIdsRequest):
+async def get_memos_info(request: MemoIdsRequest,cookie: Request):
     db = SessionLocal()
     try:
         results: Dict[str, dict] = {}
         memos = db.query(Memo).filter(Memo.id.in_(request.memo_ids)).all()
-        userid = request.cookies.get("userid")
+        userid = cookie.cookies.get("userid")
         if not userid:
             userid = None
         for memo in memos:
+            owner = False
             if memo.created_user == userid:
                 owner == True
             else:

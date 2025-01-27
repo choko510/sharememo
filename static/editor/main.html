@@ -681,6 +681,11 @@
 
             function showToast(message, type, duration) {
                 const toastContainer = document.getElementById('toast-container');
+                const existingToasts = toastContainer.getElementsByClassName('toast');
+                
+                if (existingToasts.length >= 5) {
+                    existingToasts[0].remove();
+                }
 
                 const toast = document.createElement('div');
                 toast.classList.add('toast', type);
