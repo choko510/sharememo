@@ -54,6 +54,7 @@
 
             <div id="diff-buttons" style="display:none">
                 <button onclick="acceptDiff();wsSend('ai','accept');" class="format-button" id="accept">了承</button>
+                <button onclick="cancelDiff();AIreq('regen');" class="format-button" id="regen">再生成</button>
                 <button onclick="cancelDiff();wsSend('ai','cancel');" class="format-button" id="cancel">キャンセル</button>
             </div>
             
@@ -61,7 +62,7 @@
 
             <div class="share-link">
                 <span class="countbox">文字数: <span id="charCount">0</span></span> 
-                <button onclick="copyAll()" class="format-button">全てをコピー</button>
+                <button onclick="copyAll()" class="format-button">コピー</button>
                 <button onclick="openModal()" class="format-button">共有</button>
                 <span class="countbox">接続中のユーザー: <span id="activeUsers"></span></span>
             </div>
@@ -108,6 +109,7 @@
             let connection_count = 0;
             let oldText = '';
             let newText = '';
+            let lastuseai;
 
             DOMPurify.setConfig({
                 ALLOWED_TAGS: ['div', 'span', 'p', 'br'],
@@ -595,9 +597,21 @@
             }
 
             function AIreq(type) {
+
+                if(type=="regen"){
+                    wsSend('ai','cancel');
+                    ws.send(JSON.stringify({
+                        type:"ai",
+                        req:lastuseai,
+                        status :"gen"
+                    }));
+                    return
+                }
+
                 document.getElementById('tooltip-container').style.display = 'none';
                 document.getElementById("tool").disabled = true;
                 document.getElementById('editor').contentEditable = false;
+                lastuseai = type;
                 ws.send(JSON.stringify({
                     type: "ai",
                     req:type,
