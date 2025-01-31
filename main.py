@@ -2,7 +2,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Resp
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 import json
 import uuid
 import time
@@ -44,7 +44,7 @@ cursors: Dict[str, Dict] = {}
 
 COLORLIST = [   "#E69AAF", "#EEB598", "#E6D38C", "#BFE095", "#93D6CE", "#94BBE6", "#B297CF", "#E0A1B1", "#EBC297", "#E6DBB1",
                 "#C3DE0B", "#95CCBF", "#A6C2E6", "#BFA1E6", "#E2B4C7", "#E6CCAC", "#DED9A6", "#B4CFA2", "#A2CBBE", "#E6D9C2",
-                "#AFC2E0", "#C3AEE0", "#E0B7C7", "#E6C7B4", "#E6DEB7", "#CCDBBE", "#B7D1CA", "#C3CCE6", "#CEBEE0", "#E0BECF"
+                "#AFC2E0", "#C3AEE0", "#CEBEE0", "#E0BECF"
             ]
 
 class ConnectionManager:
@@ -144,11 +144,6 @@ async def create_memo(request: Request, response: Response):
     finally:
         db.close()
     return {"memo_id": memo_id}
-
-class SuggestItem(BaseModel):
-    count: int # 文字位置（UTF-16コードユニット)
-    before: str
-    after: str
 
 @app.websocket("/ws/{memo_id}")
 async def websocket_endpoint(websocket: WebSocket, memo_id: str):
@@ -326,7 +321,8 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
 
             elif message["type"] == "spellcheck":
                     memo_content = message["content"]
-                    suggestions = await check_spelling(memo_content) # Gemini API を使用したスペルチェック関数を使用
+                    suggestions_pydantic: List[SuggestItem] = await check_spelling(memo_content) # Gemini API を使用したスペルチェック関数を使用
+                    suggestions: List[Dict[str, Any]] = [suggestion.model_dump() for suggestion in suggestions_pydantic] # Convert Pydantic models to dictionaries
                     await websocket.send_json({
                         "type": "suggest",
                         "suggestions": suggestions
@@ -418,6 +414,11 @@ async def get_memos_info(request: MemoIdsRequest,cookie: Request):
     finally:
         db.close()
 
+class SuggestItem(BaseModel):
+    count: int # 文字位置（UTF-16コードユニット)
+    before: str
+    after: str
+
 async def check_spelling(content: str) -> List[SuggestItem]:
     model = genai.GenerativeModel("gemini-1.5-flash")
     prompt = f"""
@@ -439,13 +440,16 @@ async def check_spelling(content: str) -> List[SuggestItem]:
     - 同じ文字位置で複数の誤字脱字がある場合は、それぞれ別のSuggestItemとして出力してください。
     - count は、文章全体を0から数えたUTF-16コードユニットでの位置です。
 
+    #注意
+    - countの文字数に誤りが無いか慎重に１文字ずつ数えて、結果間違いがなければ出力してください。
+
     # 入力文章
     {content}
     """
 
     try:
         response = await model.generate_content_async(prompt)
-        json_str = response.text.strip()
+        json_str = response.text.strip().replace("```", "").replace("json", "")
 
         if not json_str or json_str == "[]":
             return []
@@ -458,6 +462,7 @@ async def check_spelling(content: str) -> List[SuggestItem]:
             suggestions = [SuggestItem(**item) for item in suggestions_json]
             return suggestions
         except json.JSONDecodeError as e:
+            print(f"Error: {e}")
             return []
 
     except Exception as e:

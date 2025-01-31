@@ -118,6 +118,7 @@
             let lastuseai;
             let suggestionData = null;
             let suggestionHighlight;
+            let spellCheckTimeout; // 追加：スペルチェックのタイムアウトを管理する変数
 
             DOMPurify.setConfig({
                 ALLOWED_TAGS: ['div', 'span', 'p', 'br', 'mark'],
@@ -510,7 +511,10 @@
                 sendContent();
                 updateCharCount();
                 if (document.getElementById('spellchack').checked) {
-                    spellCheck();
+                    // 以前のタイムアウトがあればクリア
+                    clearTimeout(spellCheckTimeout);
+                    // 3秒後にspellCheck関数を呼び出す
+                    spellCheckTimeout = setTimeout(spellCheck, 3000); // 3秒後にスペルチェックを実行
                 }
             }
 
@@ -709,9 +713,12 @@
 
                     spellCheckCheckbox.onchange = function() {
                         if (spellCheckCheckbox.checked) {
-                            spellCheck();
+                            // チェックボックスがオンになった時、遅延スペルチェックを開始
+                            clearTimeout(spellCheckTimeout); // 以前のタイムアウトをクリア
+                            spellCheckTimeout = setTimeout(spellCheck, 3000); // 3秒後にスペルチェックを実行
                         } else {
                             removeSuggestionHighlight();
+                            clearTimeout(spellCheckTimeout); // チェックボックスがオフになったらタイムアウトもクリア
                         }
                     };
 
@@ -870,7 +877,7 @@
             function showSuggestionPopup(event, suggestion, markElement, originalText) {
                 const popup = document.getElementById('suggestion-popup');
                 const optionsContainer = document.getElementById('suggestion-options');
-                optionsContainer.innerHTML = ''; 
+                optionsContainer.innerHTML = '';
 
                 let suggestionButton = document.createElement('button');
                 suggestionButton.textContent = `修正: ${suggestion}`;
@@ -899,7 +906,7 @@
             function hideSuggestion() {
                 const popup = document.getElementById('suggestion-popup');
                 popup.style.display = 'none';
-                suggestionHighlight = null; 
+                suggestionHighlight = null;
             }
 
 
