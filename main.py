@@ -2,14 +2,14 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Resp
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from typing import Dict, List
+from typing import Dict, List, Optional
 import json
 import uuid
 import time
 import google.generativeai as genai
 from dotenv import load_dotenv
 import os
-from sqlalchemy import create_engine, Column, String, Text, Integer 
+from sqlalchemy import create_engine, Column, String, Text, Integer
 from sqlalchemy.orm import declarative_base, sessionmaker
 from pydantic import BaseModel, field_validator
 
@@ -130,7 +130,7 @@ async def create_memo(request: Request, response: Response):
             value= str(uuid.uuid4())[:6],
             max_age=60*60*24*365,
         )
-    
+
     db = SessionLocal()
     try:
         new_memo = Memo(
@@ -145,11 +145,16 @@ async def create_memo(request: Request, response: Response):
         db.close()
     return {"memo_id": memo_id}
 
+class SuggestItem(BaseModel):
+    count: int # 文字位置（UTF-16コードユニット)
+    before: str
+    after: str
+
 @app.websocket("/ws/{memo_id}")
 async def websocket_endpoint(websocket: WebSocket, memo_id: str):
     cookies = websocket.cookies
     user_id = cookies.get("userid")
-    
+
     if not user_id:
         await websocket.accept()
         await websocket.send_json({
@@ -158,11 +163,11 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
         })
         await websocket.close()
         return
-    
+
     user_name = f"User-{user_id[:6]}"
-    
+
     await manager.connect(websocket, memo_id, user_id, user_name)
-    
+
     try:
         db = SessionLocal()
         memo = db.query(Memo).filter(Memo.id == memo_id).first()
@@ -178,7 +183,7 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                 "status":"notfound"
             })
         db.close()
-        
+
         while True:
             data = await websocket.receive_text()
             message = json.loads(data)
@@ -192,7 +197,7 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                     db.commit()
                     await manager.broadcast(data, memo_id, user_id)
                 db.close()
-            
+
             elif message["type"] == "cursor":
                 db = SessionLocal()
                 memo = db.query(Memo).filter(Memo.id == memo_id).first()
@@ -216,7 +221,7 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                         user_id
                     )
                 db.close()
-            
+
             elif message["type"] == "ai":
                 db = SessionLocal()
                 memo = db.query(Memo).filter(Memo.id == memo_id).first()
@@ -254,7 +259,7 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                                 修正文章に含まれるHTMLタグは、基本的にそのまま残してください。ただし、明確に不要な場合のみ削除してください。
                                 改行は必ず<br>タグを使用してください。
                                 変更点がない場合は対象の文章を含まずに、"nochange"とだけ出力して下さい。
-                            #対象文章 
+                            #対象文章
                                 {memo_content}
                             '''
                         elif message["req"] == "continued":
@@ -318,7 +323,15 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                             "type": "ai",
                             "status": "cancel",
                         }), memo_id, user_id)
-                db.close()
+
+            elif message["type"] == "spellcheck":
+                    memo_content = message["content"]
+                    suggestions = await check_spelling(memo_content) # Gemini API を使用したスペルチェック関数を使用
+                    await websocket.send_json({
+                        "type": "suggest",
+                        "suggestions": suggestions
+                    })
+
 
     except WebSocketDisconnect:
         await manager.disconnect(memo_id, user_id)
@@ -335,7 +348,7 @@ async def delete_memo(memo_id: str):
         memo = db.query(Memo).filter(Memo.id == memo_id).first()
         if memo is None:
             raise HTTPException(status_code=404, detail="Memo not found")
-        
+
         if memo_id in manager.active_connections:
             connections = manager.active_connections[memo_id].copy()
             for user_id in connections:
@@ -343,7 +356,7 @@ async def delete_memo(memo_id: str):
 
         db.delete(memo)
         db.commit()
-        
+
         return JSONResponse(
             content={"status": "success", "message": "ok"},
             status_code=200
@@ -388,22 +401,68 @@ async def get_memos_info(request: MemoIdsRequest,cookie: Request):
                 "owner":owner,
                 "status": "found"
             }
-        
+
         for memo_id in request.memo_ids:
             if memo_id not in results:
                 results[memo_id] = {
                     "memo_id": memo_id,
                     "status": "not_found"
                 }
-        
+
         return {
             "memos": results
         }
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
+
+async def check_spelling(content: str) -> List[SuggestItem]:
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    prompt = f"""
+    # 命令
+    与えられた文章の誤字脱字を検出し、修正候補と共にJSON形式で出力してください。
+    もし誤字脱字がない場合は、空のJSON配列を返してください。
+
+    # JSON出力形式
+    [
+        {{"count": 誤字脱字があった1文字目の文字数, "before": 誤字脱字の元の文章, "after": 修正後の文章}},
+        ...
+    ]
+
+    # 制約条件
+    - 文字数のカウントは、UTF-16コードユニットを基準とします。
+    - 出力JSONは、SuggestItemモデルのリスト形式に準拠してください。
+    - 修正候補は、文脈に最も適したものを1つ提示してください。
+    - HTMLタグは無視して、テキスト内容のみを対象にスペルチェックを行ってください。
+    - 同じ文字位置で複数の誤字脱字がある場合は、それぞれ別のSuggestItemとして出力してください。
+    - count は、文章全体を0から数えたUTF-16コードユニットでの位置です。
+
+    # 入力文章
+    {content}
+    """
+
+    try:
+        response = await model.generate_content_async(prompt)
+        json_str = response.text.strip()
+
+        if not json_str or json_str == "[]":
+            return []
+
+        if json_str == '"nochange"' or json_str == "'nochange'":
+            return []
+
+        try:
+            suggestions_json = json.loads(json_str)
+            suggestions = [SuggestItem(**item) for item in suggestions_json]
+            return suggestions
+        except json.JSONDecodeError as e:
+            return []
+
+    except Exception as e:
+        print(f"Error: {e}")
+        return []
 
 if __name__ == "__main__":
     import uvicorn

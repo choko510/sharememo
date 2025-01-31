@@ -57,41 +57,47 @@
                 <button onclick="cancelDiff();AIreq('regen');" class="format-button" id="regen">再生成</button>
                 <button onclick="cancelDiff();wsSend('ai','cancel');" class="format-button" id="cancel">キャンセル</button>
             </div>
-            
-            <div id="editor" contenteditable="true" onpaste="handlePaste(event)"></div>
+
+            <div id="editor" contenteditable="true" onpaste="handlePaste(event)" oninput="handleInput()"></div>
 
             <div class="share-link">
-                <span class="countbox">文字数: <span id="charCount">0</span></span> 
+                <span class="countbox">文字数: <span id="charCount">0</span></span>
                 <button onclick="copyAll()" class="format-button">コピー</button>
                 <button onclick="openModal()" class="format-button">共有</button>
                 <span class="countbox">接続中のユーザー: <span id="activeUsers"></span></span>
             </div>
-            
+
         </div>
 
         <div class="modal micromodal-slide" id="modal-1" aria-hidden="true">
             <div class="modal__overlay" tabindex="-1" data-micromodal-close>
-            <div class="modal__container" role="dialog" aria-modal="true" aria-labelledby="modal-1-title" style="text-align: center;">
-                <main class="modal__content" id="modal-1-content">
-                    共有リンク: <span id="shareUrl"></span>
-                    <br>
-                    <button onclick="copyShareUrl()" class="format-button">URLをコピー</button>
-                    <div id="qrcode"></div>
-                </main>
-                <footer class="modal__footer">
-                    <button class="modal__btn" data-micromodal-close aria-label="Close this dialog window">閉じる</button>
-                </footer>
-            </div>
+                <div class="modal__container" role="dialog" aria-modal="true" aria-labelledby="modal-1-title" style="text-align: center;">
+                    <main class="modal__content" id="modal-1-content">
+                        共有リンク: <span id="shareUrl"></span>
+                        <br>
+                        <button onclick="copyShareUrl()" class="format-button">URLをコピー</button>
+                        <div id="qrcode"></div>
+                    </main>
+                    <footer class="modal__footer">
+                        <button class="modal__btn" data-micromodal-close aria-label="Close this dialog window">閉じる</button>
+                    </footer>
+                </div>
             </div>
         </div>
-        
+
         <div id="tooltip-container" class="tooltip-container" style="display: none;">
             <div class="tooltip-item" onclick="AIreq('rewrite')">AI添削</div>
             <div class="tooltip-item" onclick="AIreq('makeword')">AI文字数稼ぎ</div>
             <div class="tooltip-item" onclick="AIreq('continued')">AIで続きを書く</div>
+            <div class="tooltip-item" ><input type="checkbox" id="spellchack">誤字脱字検出・スペルチェック</div>
+            <!--実装予定 <div class="tooltip-item" ><input type="checkbox" id="aisuggest">AI自動提案</div> -->
         </div>
 
         <div id="toast-container"></div>
+        <div id="suggestion-popup" style="display: none; position: absolute; background-color: white; border: 1px solid #ccc; padding: 5px; z-index: 100;">
+            <div id="suggestion-options"></div>
+            <button onclick="hideSuggestion()">無視する</button>
+        </div>
 
         <link rel="stylesheet" href="static/editor/modal.css">
         <link rel="stylesheet" href="static/editor/toast.css">
@@ -110,9 +116,11 @@
             let oldText = '';
             let newText = '';
             let lastuseai;
+            let suggestionData = null;
+            let suggestionHighlight;
 
             DOMPurify.setConfig({
-                ALLOWED_TAGS: ['div', 'span', 'p', 'br'],
+                ALLOWED_TAGS: ['div', 'span', 'p', 'br', 'mark'],
                 ALLOWED_ATTR: ['style', 'class', 'data-name', 'contenteditable'],
                 ALLOW_DATA_ATTR: true
             });
@@ -143,6 +151,12 @@
                     applyStyle('backgroundColor', event.target.value);
                 });
 
+                editor.addEventListener('click', function(event) {
+                    if (!event.target.classList.contains('suggestion-highlight')) {
+                        hideSuggestion();
+                    }
+                });
+
                 init();
             });
 
@@ -151,7 +165,7 @@
 
                 const text = editor.innerHTML
                     .replace(/<[^>]*>/g, '')
-                    .replace(/&nbsp;/g, ' ')
+                    .replace(/ /g, ' ')
                     .replace(/\s+/g, '');
                 document.getElementById('charCount').textContent = text.length;
             }
@@ -197,7 +211,7 @@
 
             function cleanup() {
                 const editor = document.getElementById('editor');
-                const elements = editor.querySelectorAll('*'); 
+                const elements = editor.querySelectorAll('*');
 
                 elements.forEach(element => {
                     const parent = element.parentNode;
@@ -273,7 +287,7 @@
                     const data = JSON.parse(event.data);
 
                     switch (data.type) {
-                        case 'init': 
+                        case 'init':
                             document.getElementById('editor').innerHTML = sanitizeContent(data.content);
 
                             if(lastContent !== ""){//再接続時
@@ -310,14 +324,14 @@
                                 name: data.name,
                                 color: data.color
                             };
-                            
+
                             updateCursor(data.user_id, data.position, data.name, data.color);
                             break;
 
                         case 'users':
                             connection_count = Object.keys(data.users).length;
                             updateUsersList(data.users);
-                            
+
                             if(myname != undefined){//mynameがundefiedの場合は初回接続時
                                 name = data.user_id.split('-')[0];
                                 if (data.status == "join") {
@@ -350,6 +364,12 @@
                                 acceptDiff();
                             }else if(data.status == "cancel"){
                                 cancelDiff();
+                            }
+                            break;
+                        case "suggest":
+                            if (document.getElementById('spellchack').checked) {
+                                suggestionData = data.suggestions;
+                                applySuggestionHighlight(suggestionData);
                             }
                             break;
                     }
@@ -450,8 +470,8 @@
                 let hasBold = false;
                 if (style === 'bold') {
                     Array.from(contents.childNodes).forEach(node => {
-                        if (node.nodeType === Node.ELEMENT_NODE && 
-                            node.tagName === 'SPAN' && 
+                        if (node.nodeType === Node.ELEMENT_NODE &&
+                            node.tagName === 'SPAN' &&
                             node.style.fontWeight === 'bold') {
                             hasBold = true;
                         }
@@ -486,10 +506,13 @@
                 sendContent();
             }
 
-            document.getElementById('editor').addEventListener('input',() => {
+            function handleInput() {
                 sendContent();
                 updateCharCount();
-            });
+                if (document.getElementById('spellchack').checked) {
+                    spellCheck();
+                }
+            }
 
             let sendTimeout;
             function sendContent() {
@@ -502,7 +525,7 @@
 
                     const cursors = editor.querySelectorAll('.cursor');
                     cursors.forEach(cursor => cursor.remove());
-                    
+
                     const currentContent = editor.innerHTML;
                     if (ws && ws.readyState === WebSocket.OPEN && currentContent !== lastContent) {
                         lastContent = currentContent;
@@ -587,12 +610,12 @@
                 const url = document.getElementById('shareUrl').textContent;
                 const qrcodeElement = document.getElementById('qrcode');
                 qrcodeElement.innerHTML = '';
-                
-                const qr = qrcode(0, 'M'); 
+
+                const qr = qrcode(0, 'M');
                 qr.addData(url);
                 qr.make();
                 qrcodeElement.innerHTML = qr.createImgTag(8);
-                
+
                 MicroModal.show('modal-1');
             }
 
@@ -623,7 +646,7 @@
                 const oldText = document.getElementById('editor').innerHTML;
                 const sanitizedNewText = sanitizeContent(newText);
                 const diff = Diff.diffWords(oldText, sanitizedNewText);
-                
+
                 const diffResult = document.getElementById('editor');
                 diffResult.innerHTML = '';
 
@@ -642,7 +665,9 @@
                     });
                 });
                 updateCharCount();
+                removeSuggestionHighlight();
             }
+
 
             function acceptDiff() {
                 const editor = document.getElementById('editor');
@@ -650,7 +675,7 @@
                 editor.contentEditable = true;
                 document.getElementById("tool").disabled = false;
                 document.getElementById('diff-buttons').style.display = 'none';
-                
+
                 const elements = editor.getElementsByTagName('*');
                 for (let element of elements) {
                     element.classList.remove('added', 'removed');
@@ -670,15 +695,27 @@
                 updateCharCount();
             }
 
+
             function tooltip() {
                 const tooltipContainer = document.getElementById('tooltip-container');
                 const toolButton = document.getElementById('tool');
+                const spellCheckCheckbox = document.getElementById('spellchack');
                 const buttonRect = toolButton.getBoundingClientRect();
 
                 if (tooltipContainer.style.display === 'none') {
                     tooltipContainer.style.display = 'block';
                     tooltipContainer.style.top = `${buttonRect.bottom + window.scrollY + 5}px`;
                     tooltipContainer.style.left = `${buttonRect.left + window.scrollX}px`;
+
+                    spellCheckCheckbox.onchange = function() {
+                        if (spellCheckCheckbox.checked) {
+                            spellCheck();
+                        } else {
+                            removeSuggestionHighlight();
+                        }
+                    };
+
+
                 } else {
                     tooltipContainer.style.display = 'none';
                 }
@@ -687,7 +724,7 @@
             document.addEventListener('click', function(event) {
                 const tooltipContainer = document.getElementById('tooltip-container');
                 const toolButton = document.getElementById('tool');
-                
+
                 if (!tooltipContainer.contains(event.target) && event.target !== toolButton) {
                     tooltipContainer.style.display = 'none';
                 }
@@ -696,7 +733,7 @@
             function showToast(message, type, duration) {
                 const toastContainer = document.getElementById('toast-container');
                 const existingToasts = toastContainer.getElementsByClassName('toast');
-                
+
                 if (existingToasts.length >= 5) {
                     existingToasts[0].remove();
                 }
@@ -708,7 +745,7 @@
                 messageText.innerText = message;
 
                 const closeButton = document.createElement('span');
-                closeButton.innerHTML = '&times;';
+                closeButton.innerHTML = '×';
                 closeButton.classList.add('close-btn');
                 closeButton.onclick = function () {
                     toast.classList.remove('show');
@@ -735,6 +772,136 @@
                     }, duration);
                 }
             }
+
+            function spellCheck() {
+                if (ws && ws.readyState === WebSocket.OPEN && document.getElementById('spellchack').checked) {
+                    const editorContent = document.getElementById('editor').innerHTML;
+                    ws.send(JSON.stringify({
+                        type: 'spellcheck',
+                        content: editorContent
+                    }));
+                }
+            }
+
+
+            function applySuggestionHighlight(suggestions) {
+                removeSuggestionHighlight();
+                const editor = document.getElementById('editor');
+                let content = editor.innerHTML;
+                let offset = 0;
+
+                suggestions.forEach(suggestion => {
+                    const startPos = suggestion.count + offset;
+                    const endPos = startPos + suggestion.before.length;
+                    const before = suggestion.before;
+
+                    let textNodes = getTextNodesBetweenPositions(editor, startPos, endPos);
+
+                    textNodes.forEach(nodeInfo => {
+                        let node = nodeInfo.node;
+                        let nodeStart = nodeInfo.start;
+                        let nodeEnd = nodeInfo.end;
+
+                        let relativeStart = Math.max(0, startPos - nodeStart);
+                        let relativeEnd = Math.min(node.textContent.length, endPos - nodeStart);
+
+                        if (relativeStart < relativeEnd) {
+                            let range = document.createRange();
+                            range.setStart(node, relativeStart);
+                            range.setEnd(node, relativeEnd);
+
+                            let mark = document.createElement('mark');
+                            mark.classList.add('suggestion-highlight');
+                            mark.textContent = range.toString();
+                            mark.onclick = function(event) {
+                                showSuggestionPopup(event, suggestion.after, mark, suggestion.before);
+                                event.stopPropagation();
+                            };
+
+                            range.deleteContents();
+                            range.insertNode(mark);
+
+                            offset += `<mark class="suggestion-highlight">`.length + `</mark>`.length;
+                        }
+                    });
+                });
+            }
+
+
+            function getTextNodesBetweenPositions(root, start, end) {
+                let textNodes = [];
+                let textLength = 0;
+
+                function getTextNodesRecursive(node) {
+                    if (textLength > end) {
+                        return;
+                    }
+
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        let nodeStart = textLength;
+                        let nodeEnd = textLength + node.textContent.length;
+
+                        if (nodeEnd >= start && nodeStart <= end) {
+                            textNodes.push({ node: node, start: nodeStart, end: nodeEnd });
+                        }
+                        textLength = nodeEnd;
+                    } else if (node.nodeType === Node.ELEMENT_NODE) {
+                        for (let i = 0; i < node.childNodes.length; i++) {
+                            getTextNodesRecursive(node.childNodes[i]);
+                        }
+                    }
+                }
+
+                getTextNodesRecursive(root);
+                return textNodes;
+            }
+
+
+            function removeSuggestionHighlight() {
+                const editor = document.getElementById('editor');
+                let highlights = editor.querySelectorAll('.suggestion-highlight');
+                highlights.forEach(mark => {
+                    let textNode = document.createTextNode(mark.textContent);
+                    mark.parentNode.replaceChild(textNode, mark);
+                });
+            }
+
+
+            function showSuggestionPopup(event, suggestion, markElement, originalText) {
+                const popup = document.getElementById('suggestion-popup');
+                const optionsContainer = document.getElementById('suggestion-options');
+                optionsContainer.innerHTML = ''; 
+
+                let suggestionButton = document.createElement('button');
+                suggestionButton.textContent = `修正: ${suggestion}`;
+                suggestionButton.onclick = function() {
+                    applySuggestion(suggestion, markElement, originalText);
+                    hideSuggestion();
+                };
+                optionsContainer.appendChild(suggestionButton);
+
+                popup.style.left = `${event.clientX + window.scrollX}px`;
+                popup.style.top = `${event.clientY + window.scrollY}px`;
+                popup.style.display = 'block';
+                suggestionHighlight = markElement;
+            }
+
+
+            function applySuggestion(suggestion, markElement, originalText) {
+                if (markElement && markElement.parentNode) {
+                    let textNode = document.createTextNode(suggestion);
+                    markElement.parentNode.replaceChild(textNode, markElement);
+                }
+                sendContent();
+            }
+
+
+            function hideSuggestion() {
+                const popup = document.getElementById('suggestion-popup');
+                popup.style.display = 'none';
+                suggestionHighlight = null; 
+            }
+
 
         </script>
     </body>
