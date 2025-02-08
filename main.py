@@ -277,7 +277,7 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                                 "status": "failure",
                             }), memo_id, None)
                         try:
-                            model = genai.GenerativeModel("gemini-1.5-flash")
+                            model = genai.GenerativeModel("gemini-2.0-flash")
                             response = model.generate_content(input_text)
                             if response.text == "nochange" or input_text == response.text:
                                 await manager.broadcast(json.dumps({
@@ -420,7 +420,7 @@ class SuggestItem(BaseModel):
     after: str
 
 async def check_spelling(content: str) -> List[SuggestItem]:
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-2.0-flash")
     prompt = f"""
     # 命令
     与えられた文章の誤字脱字を検出し、修正候補と共にJSON形式で出力してください。
