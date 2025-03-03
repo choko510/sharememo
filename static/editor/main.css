@@ -149,3 +149,9 @@ body {
 .tooltip-item:hover {
     background-color: #f0f0f0;
 }
+
+/* 予測機能 */
+
+.suggest {
+    color: #a9acae;
+}

@@ -246,9 +246,10 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                         elif message["req"] == "makeword":
                             input_text = f'''
                             #命令
-                                文章の量を増やして下さい。
+                                1.2倍程度に文章の量を増やして下さい。
                             #制約条件
                                 元の文章の意図や構造を保ったまま増やしてください。
+                                できるかぎり自然な風に増やしてください。
                                 大きく改行の位置関係を変更しないでください。
                                 出力形式は、増やした後の文章のみとしてください。
                                 修正文章に含まれるHTMLタグは、基本的にそのまま残してください。ただし、明確に不要な場合のみ削除してください。
@@ -320,14 +321,39 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                         }), memo_id, user_id)
 
             elif message["type"] == "spellcheck":
-                    memo_content = message["content"]
-                    suggestions_pydantic: List[SuggestItem] = await check_spelling(memo_content) # Gemini API を使用したスペルチェック関数を使用
-                    suggestions: List[Dict[str, Any]] = [suggestion.model_dump() for suggestion in suggestions_pydantic] # Convert Pydantic models to dictionaries
-                    await websocket.send_json({
-                        "type": "suggest",
-                        "suggestions": suggestions
-                    })
 
+                memo_content = message["content"]
+
+                
+
+                await websocket.send_json({
+                    "type": "spellcheck",
+                })
+
+            elif message["type"] == "suggest":
+                memo_content = message["content"]
+                
+                input_text = f'''
+                    #命令
+                        文章が途切れている所から、書くのをアシストして、5文字から10文字程度続きを書いてください、場合によっては長くても構いません。
+                    #制約条件
+                        元の文章の意図や形式を保ったまま続きを書いてください。
+                        出力形式は、続きの文章のみを出力してください。
+                        改行は必ず<br>タグを使用してください。
+                        極力改行は避けてください。
+                        文章を書くときにあなたがアシストする役割です。
+            
+                    #対象文章
+                        {memo_content}
+                    '''
+                
+                model = genai.GenerativeModel("gemini-2.0-flash-lite")
+                response = model.generate_content(input_text)
+                print(response.text)
+                await websocket.send_json({
+                    "type": "suggest",
+                    "suggestions": response.text
+                })
 
     except WebSocketDisconnect:
         await manager.disconnect(memo_id, user_id)
@@ -413,61 +439,6 @@ async def get_memos_info(request: MemoIdsRequest,cookie: Request):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
-
-class SuggestItem(BaseModel):
-    count: int # 文字位置（UTF-16コードユニット)
-    before: str
-    after: str
-
-async def check_spelling(content: str) -> List[SuggestItem]:
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    prompt = f"""
-    # 命令
-    与えられた文章の誤字脱字を検出し、修正候補と共にJSON形式で出力してください。
-    もし誤字脱字がない場合は、空のJSON配列を返してください。
-
-    # JSON出力形式
-    [
-        {{"count": 誤字脱字があった1文字目の文字数, "before": 誤字脱字の元の文章, "after": 修正後の文章}},
-        ...
-    ]
-
-    # 制約条件
-    - 文字数のカウントは、UTF-16コードユニットを基準とします。
-    - 出力JSONは、SuggestItemモデルのリスト形式に準拠してください。
-    - 修正候補は、文脈に最も適したものを1つ提示してください。
-    - HTMLタグは無視して、テキスト内容のみを対象にスペルチェックを行ってください。
-    - 同じ文字位置で複数の誤字脱字がある場合は、それぞれ別のSuggestItemとして出力してください。
-    - count は、文章全体を0から数えたUTF-16コードユニットでの位置です。
-
-    #注意
-    - countの文字数に誤りが無いか慎重に１文字ずつ数えて、結果間違いがなければ出力してください。
-
-    # 入力文章
-    {content}
-    """
-
-    try:
-        response = await model.generate_content_async(prompt)
-        json_str = response.text.strip().replace("```", "").replace("json", "")
-
-        if not json_str or json_str == "[]":
-            return []
-
-        if json_str == '"nochange"' or json_str == "'nochange'":
-            return []
-
-        try:
-            suggestions_json = json.loads(json_str)
-            suggestions = [SuggestItem(**item) for item in suggestions_json]
-            return suggestions
-        except json.JSONDecodeError as e:
-            print(f"Error: {e}")
-            return []
-
-    except Exception as e:
-        print(f"Error: {e}")
-        return []
 
 if __name__ == "__main__":
     import uvicorn

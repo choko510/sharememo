@@ -89,8 +89,9 @@
             <div class="tooltip-item" onclick="AIreq('rewrite')">AI添削</div>
             <div class="tooltip-item" onclick="AIreq('makeword')">AI文字数稼ぎ</div>
             <div class="tooltip-item" onclick="AIreq('continued')">AIで続きを書く</div>
-            <div class="tooltip-item" ><input type="checkbox" id="spellchack">誤字脱字検出・スペルチェック</div>
-            <!--実装予定 <div class="tooltip-item" ><input type="checkbox" id="aisuggest">AI自動提案</div> -->
+            <hr>
+            <!-- <div class="tooltip-item" ><input type="checkbox" id="spellcheck">誤字脱字検出・スペルチェック</div> -->
+            <div class="tooltip-item" ><input type="checkbox" id="suggest">自動提案</div>
         </div>
 
         <div id="toast-container"></div>
@@ -118,7 +119,8 @@
             let lastuseai;
             let suggestionData = null;
             let suggestionHighlight;
-            let spellCheckTimeout; // 追加：スペルチェックのタイムアウトを管理する変数
+            let spellCheckTimeout;
+            let suggestionTimeout;
 
             DOMPurify.setConfig({
                 ALLOWED_TAGS: ['div', 'span', 'p', 'br', 'mark'],
@@ -152,7 +154,7 @@
                     applyStyle('backgroundColor', event.target.value);
                 });
 
-                editor.addEventListener('click', function(event) {
+                editor.addEventListener('click', function (event) {
                     if (!event.target.classList.contains('suggestion-highlight')) {
                         hideSuggestion();
                     }
@@ -167,7 +169,8 @@
                 const text = editor.innerHTML
                     .replace(/<[^>]*>/g, '')
                     .replace(/ /g, ' ')
-                    .replace(/\s+/g, '');
+                    .replace(/\s+/g, '')
+                    .replace(/&nbsp;/g, '');
                 document.getElementById('charCount').textContent = text.length;
             }
 
@@ -200,10 +203,6 @@
 
                 range.deleteContents();
                 range.insertNode(fragment);
-
-                const sel = window.getSelection();
-                sel.removeAllRanges();
-                sel.addRange(range);
 
                 cleanup();
                 updateCharCount();
@@ -291,7 +290,7 @@
                         case 'init':
                             document.getElementById('editor').innerHTML = sanitizeContent(data.content);
 
-                            if(lastContent !== ""){//再接続時
+                            if (lastContent !== "") {//再接続時
                                 showToast('接続しました。', 'success', 4000);
                             }
 
@@ -301,9 +300,9 @@
                             break;
 
                         case 'error':
-                            if("notfound"==data.status){
+                            if ("notfound" == data.status) {
                                 window.location.href = '/';
-                            }else if ("nocookie"==data.status){
+                            } else if ("nocookie" == data.status) {
                                 location.reload();
                             }
                             break;
@@ -333,7 +332,7 @@
                             connection_count = Object.keys(data.users).length;
                             updateUsersList(data.users);
 
-                            if(myname != undefined){//mynameがundefiedの場合は初回接続時
+                            if (myname != undefined) {//mynameがundefiedの場合は初回接続時
                                 name = data.user_id.split('-')[0];
                                 if (data.status == "join") {
                                     showToast(`User-${name}さんが参加しました。`, 'success', 3500);
@@ -345,32 +344,38 @@
                             break;
 
                         case 'ai':
-                            if (data.status == "stop"){
+                            if (data.status == "stop") {
                                 document.getElementById("tool").disabled = true;
                                 document.getElementById('editor').contentEditable = false;
-                            }else if(data.status == "success"){
+                            } else if (data.status == "success") {
                                 oldText = document.getElementById('editor').innerHTML;
                                 newText = data.content;
                                 showDiff(data.content);
                                 document.getElementById('diff-buttons').style.display = 'block';
-                            }else if(data.status == "failure"){
+                            } else if (data.status == "failure") {
                                 document.getElementById('editor').contentEditable = true;
                                 document.getElementById("tool").disabled = false;
                                 showToast("正しく添削出来ませんでした。", "error", 5000);
-                            }else if(data.status == "nochange"){
+                            } else if (data.status == "nochange") {
                                 document.getElementById('editor').contentEditable = true;
                                 document.getElementById("tool").disabled = false;
                                 showToast("変更箇所がありませんでした。", "error", 5000);
-                            }else if(data.status == "accept"){
+                            } else if (data.status == "accept") {
                                 acceptDiff();
-                            }else if(data.status == "cancel"){
+                            } else if (data.status == "cancel") {
                                 cancelDiff();
                             }
                             break;
-                        case "suggest":
-                            if (document.getElementById('spellchack').checked) {
+                        case "spellcheck":
+                            if (document.getElementById('spellcheck').checked) {
                                 suggestionData = data.suggestions;
                                 applySuggestionHighlight(suggestionData);
+                            }
+                            break;
+                        case "suggest":
+                            if (document.getElementById('suggest').checked) {
+                                suggestionData = data.suggestions;
+                                suggest(suggestionData);
                             }
                             break;
                     }
@@ -383,12 +388,12 @@
                     }, 1000);
                 };
 
-                ws.onerror = function() {
+                ws.onerror = function () {
                     showToast('接続エラーが発生しました。ページを再読み込みしてください。', 'error', 2800);
                 };
             }
 
-            function wsSend(type,status){
+            function wsSend(type, status) {
                 ws.send(JSON.stringify({
                     type: type,
                     status: status
@@ -421,7 +426,6 @@
                 }
 
                 const range = document.createRange();
-                const sel = window.getSelection();
 
                 try {
                     if (position >= 0 && position <= editor.textContent.length) {
@@ -508,57 +512,99 @@
             }
 
             function handleInput() {
-                sendContent();
-                updateCharCount();
-                if (document.getElementById('spellchack').checked) {
+                if (document.getElementById('suggest').checked) {
+                    // 以前のタイムアウトがあればクリア
+                    clearTimeout(suggestionTimeout);
+                    // 3秒後にspellCheck関数を呼び出す
+                    suggestionTimeout = setTimeout(sendSuggest, 2000); // 2秒後にスペルチェックを実行
+                } else {
+                    const suggests = editor.querySelectorAll('.suggest');
+                    suggests.forEach(suggest => suggest.remove());
+                }
+
+                if (document.getElementById('spellcheck').checked) {
                     // 以前のタイムアウトがあればクリア
                     clearTimeout(spellCheckTimeout);
                     // 3秒後にspellCheck関数を呼び出す
-                    spellCheckTimeout = setTimeout(spellCheck, 3000); // 3秒後にスペルチェックを実行
+                    spellCheckTimeout = setTimeout(sendspellcheck, 2000); // 2秒後にスペルチェックを実行
                 }
+
+                updateCharCount();
+                sendContent();
             }
 
             let sendTimeout;
             function sendContent() {
-                mouseup();
                 isProcessing = true;
                 clearTimeout(sendTimeout);
 
+                const editor = document.getElementById('editor');
+
+                const cursors = editor.querySelectorAll('.cursor');
+                cursors.forEach(cursor => cursor.remove());
+
+                const suggest = editor.querySelectorAll('.suggest');
+                suggest.forEach(suggest => suggest.remove());
+
                 sendTimeout = setTimeout(() => {
-                    const editor = document.getElementById('editor');
-
-                    const cursors = editor.querySelectorAll('.cursor');
-                    cursors.forEach(cursor => cursor.remove());
-
                     const currentContent = editor.innerHTML;
-                    if (ws && ws.readyState === WebSocket.OPEN && currentContent !== lastContent) {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
                         lastContent = currentContent;
                         ws.send(JSON.stringify({
                             type: 'content',
                             content: currentContent
                         }));
                     }
+
                     isProcessing = false;
-                }, 100);
+                }, 50);
             }
 
-            document.getElementById('editor').addEventListener('mouseup', mouseup);
+            //document.getElementById('editor').addEventListener('mouseup', mouseup); //keydownでtab押下時と競合するため、コメントアウト
 
-            document.getElementById('editor').addEventListener('keydown', mouseup);
+            document.getElementById('editor').addEventListener('keydown', function (event) {
+
+                const editor = document.getElementById('editor');
+                const suggests = editor.querySelectorAll('.suggest');
+
+                if (event.key === 'Tab') {
+                    event.preventDefault();
+                    suggests.forEach(span => {
+                        const parent = span.parentNode;
+                        const children = Array.from(span.childNodes);
+                        children.forEach(child => {
+                            parent.insertBefore(child, span);
+                        });
+                        parent.removeChild(span);
+                    });
+
+                    const selection = window.getSelection();
+                    const range = document.createRange();
+                    range.selectNodeContents(editor);
+                    range.collapse(false);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+
+                } else {
+
+                    suggests.forEach(suggest => suggest.remove());
+                }
+
+                if (connection_count != 1) { //自分以外のユーザーがいる場合のみ
+                    mouseup();
+                }
+            });
 
             function mouseup() {
-                if(connection_count!=1){
-                    const selection = window.getSelection();
-                    if (selection.rangeCount > 0) {
-                        const range = selection.getRangeAt(0);
-                        const position = getTextPosition(range.startContainer, range.startOffset);
-
-                        if (ws && ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify({
-                                type: 'cursor',
-                                position: position
-                            }));
-                        }
+                const selection = window.getSelection();
+                if (selection.rangeCount > 0) {
+                    const range = selection.getRangeAt(0);
+                    const position = getTextPosition(range.startContainer, range.startOffset);
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'cursor',
+                            position: position
+                        }));
                     }
                 }
             }
@@ -566,7 +612,7 @@
             document.getElementById('editor').addEventListener('blur', mousedel);
 
             function mousedel() {
-                if(connection_count!=1){
+                if (connection_count != 1) {//自分以外のユーザーがいる場合のみ
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({
                             type: 'cursor',
@@ -625,12 +671,12 @@
 
             function AIreq(type) {
 
-                if(type=="regen"){
-                    wsSend('ai','cancel');
+                if (type == "regen") {
+                    wsSend('ai', 'cancel');
                     ws.send(JSON.stringify({
-                        type:"ai",
-                        req:lastuseai,
-                        status :"gen"
+                        type: "ai",
+                        req: lastuseai,
+                        status: "gen"
                     }));
                     return
                 }
@@ -641,7 +687,7 @@
                 lastuseai = type;
                 ws.send(JSON.stringify({
                     type: "ai",
-                    req:type,
+                    req: type,
                     status: "gen"
                 }));
             }
@@ -703,7 +749,8 @@
             function tooltip() {
                 const tooltipContainer = document.getElementById('tooltip-container');
                 const toolButton = document.getElementById('tool');
-                const spellCheckCheckbox = document.getElementById('spellchack');
+                const spellCheckCheckbox = document.getElementById('spellcheck');
+                const suggest = document.getElementById('suggest');
                 const buttonRect = toolButton.getBoundingClientRect();
 
                 if (tooltipContainer.style.display === 'none') {
@@ -711,24 +758,34 @@
                     tooltipContainer.style.top = `${buttonRect.bottom + window.scrollY + 5}px`;
                     tooltipContainer.style.left = `${buttonRect.left + window.scrollX}px`;
 
-                    spellCheckCheckbox.onchange = function() {
+                    spellCheckCheckbox.onchange = function () {
                         if (spellCheckCheckbox.checked) {
                             // チェックボックスがオンになった時、遅延スペルチェックを開始
                             clearTimeout(spellCheckTimeout); // 以前のタイムアウトをクリア
-                            spellCheckTimeout = setTimeout(spellCheck, 3000); // 3秒後にスペルチェックを実行
+                            spellCheckTimeout = setTimeout(sendspellcheck, 3000); // 3秒後にスペルチェックを実行
                         } else {
                             removeSuggestionHighlight();
                             clearTimeout(spellCheckTimeout); // チェックボックスがオフになったらタイムアウトもクリア
                         }
                     };
 
+                    suggest.onchange = function () {
+                        if (suggest.checked) {
+                            // チェックボックスがオンになった時、遅延スペルチェックを開始
+                            clearTimeout(suggestionTimeout); // 以前のタイムアウトをクリア
+                            suggestionTimeout = setTimeout(sendSuggest, 3000); // 3秒後にスペルチェックを実行
+                        } else {
+                            removeSuggestionHighlight();
+                            clearTimeout(suggestionTimeout); // チェックボックスがオフになったらタイムアウトもクリア
+                        }
+                    };
 
                 } else {
                     tooltipContainer.style.display = 'none';
                 }
             }
 
-            document.addEventListener('click', function(event) {
+            document.addEventListener('click', function (event) {
                 const tooltipContainer = document.getElementById('tooltip-container');
                 const toolButton = document.getElementById('tool');
 
@@ -780,16 +837,31 @@
                 }
             }
 
-            function spellCheck() {
-                if (ws && ws.readyState === WebSocket.OPEN && document.getElementById('spellchack').checked) {
+            function sendspellcheck() {
+                if (ws && ws.readyState === WebSocket.OPEN && document.getElementById('spellcheck').checked) {
                     const editorContent = document.getElementById('editor').innerHTML;
-                    ws.send(JSON.stringify({
-                        type: 'spellcheck',
-                        content: editorContent
-                    }));
+                    const count = document.getElementById('editor').textContent.length;
+                    if (count > 0) {
+                        ws.send(JSON.stringify({
+                            type: 'spellcheck',
+                            content: editorContent
+                        }));
+                    }
                 }
             }
 
+            function sendSuggest() {
+                if (ws && ws.readyState === WebSocket.OPEN && document.getElementById('suggest').checked) {
+                    const editorContent = document.getElementById('editor').innerHTML;
+                    const count = document.getElementById('editor').textContent.length;
+                    if (count > 0) {
+                        ws.send(JSON.stringify({
+                            type: 'suggest',
+                            content: editorContent
+                        }));
+                    }
+                }
+            }
 
             function applySuggestionHighlight(suggestions) {
                 removeSuggestionHighlight();
@@ -820,7 +892,7 @@
                             let mark = document.createElement('mark');
                             mark.classList.add('suggestion-highlight');
                             mark.textContent = range.toString();
-                            mark.onclick = function(event) {
+                            mark.onclick = function (event) {
                                 showSuggestionPopup(event, suggestion.after, mark, suggestion.before);
                                 event.stopPropagation();
                             };
@@ -834,6 +906,15 @@
                 });
             }
 
+            function suggest(text) {
+                const span = document.createElement('span');
+
+                span.innerHTML = text;
+                span.classList.add("suggest");
+
+                editor.appendChild(span);
+
+            }
 
             function getTextNodesBetweenPositions(root, start, end) {
                 let textNodes = [];
@@ -881,7 +962,7 @@
 
                 let suggestionButton = document.createElement('button');
                 suggestionButton.textContent = `修正: ${suggestion}`;
-                suggestionButton.onclick = function() {
+                suggestionButton.onclick = function () {
                     applySuggestion(suggestion, markElement, originalText);
                     hideSuggestion();
                 };
@@ -908,7 +989,6 @@
                 popup.style.display = 'none';
                 suggestionHighlight = null;
             }
-
 
         </script>
     </body>
