@@ -6,6 +6,8 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>リアルタイムメモアプリ</title>
         <link rel="stylesheet" href="static/editor/main.css">
+        <link rel="stylesheet" href="static/editor/modal.css">
+        <link rel="stylesheet" href="static/editor/toast.css">
     </head>
 
     <body>
@@ -50,6 +52,8 @@
                     AIツール
                 </button>
 
+                <button onmousedown="addComment(event)" class="format-button">コメント</button>
+                <button onclick="toggleCommentSidebar()" class="format-button">コメント表示/非表示</button>
             </div>
 
             <div id="diff-buttons" style="display:none">
@@ -58,11 +62,19 @@
                 <button onclick="cancelDiff();wsSend('ai','cancel');" class="format-button" id="cancel">キャンセル</button>
             </div>
 
-            <div id="editor" contenteditable="true" onpaste="handlePaste(event)" oninput="handleInput()"></div>
+            <div class="main-content">
+                <div id="editor" contenteditable="true" onpaste="handlePaste(event)" oninput="handleInput()"></div>
+                <div id="correction-sidebar" style="display: none;">
+                    <h3>リアルタイム添削</h3>
+                    <ul id="correction-list"></ul>
+                 </div>
+                <div id="comment-sidebar"></div>
+            </div>
 
             <div class="footer-info">
                 <div class="status-bar">
                     <span>文字数: <span id="charCount">0</span></span>
+                    <span>A4換算: <span id="a4Count">0</span></span>
                     <span>接続中のユーザー: <span id="activeUsers"></span></span>
                 </div>
                 <div class="actions">
@@ -93,8 +105,9 @@
             <div class="tooltip-item" onclick="AIreq('rewrite')">AI添削</div>
             <div class="tooltip-item" onclick="AIreq('makeword')">AI文字数稼ぎ</div>
             <div class="tooltip-item" onclick="AIreq('continued')">AIで続きを書く</div>
+            <div class="tooltip-item" onclick="AIreq('verycheck')">AIで厳格チェック</div>
             <hr>
-            <!-- <div class="tooltip-item" ><input type="checkbox" id="spellcheck">誤字脱字検出・スペルチェック</div> -->
+            <div class="tooltip-item" ><input type="checkbox" id="correction">リアルタイム添削</div>
             <div class="tooltip-item" ><input type="checkbox" id="suggest">自動提案</div>
         </div>
 
@@ -104,8 +117,30 @@
             <button onclick="hideSuggestion()">無視する</button>
         </div>
 
-        <link rel="stylesheet" href="static/editor/modal.css">
-        <link rel="stylesheet" href="static/editor/toast.css">
+       <div id="verycheck-modal" class="modal-overlay">
+           <div class="modal-container">
+               <div class="modal-header">
+                   <h2 class="modal-title">厳格チェック結果</h2>
+                   <button class="modal-close-btn" onclick="closeVeryCheckModal()">&times;</button>
+               </div>
+               <div class="modal-content" id="verycheck-modal-content">
+               </div>
+           </div>
+       </div>
+
+       <div id="verycheck-progress-modal" class="modal-overlay">
+           <div class="modal-container">
+               <div class="modal-header">
+                   <h2 class="modal-title">厳格チェック実行中...</h2>
+               </div>
+               <div class="modal-content">
+                   <p id="verycheck-progress-message">処理を開始しています...</p>
+                   <div class="progress-bar-container">
+                       <div id="verycheck-progress-bar" class="progress-bar"></div>
+                   </div>
+               </div>
+           </div>
+       </div>
         <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/micromodal@0.6.1/dist/micromodal.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
@@ -123,12 +158,14 @@
             let lastuseai;
             let suggestionData = null;
             let suggestionHighlight;
-            let spellCheckTimeout;
             let suggestionTimeout;
+            let correctionTimeout;
+            let comments = [];
+            let savedRange = null;
 
             DOMPurify.setConfig({
-                ALLOWED_TAGS: ['div', 'span', 'p', 'br', 'mark'],
-                ALLOWED_ATTR: ['style', 'class', 'data-name', 'contenteditable'],
+                ALLOWED_TAGS: ['div', 'span', 'p', 'br', 'mark', 'comment-highlight'],
+                ALLOWED_ATTR: ['style', 'class', 'data-name', 'contenteditable', 'data-comment-id'],
                 ALLOW_DATA_ATTR: true
             });
 
@@ -172,10 +209,11 @@
 
                 const text = editor.innerHTML
                     .replace(/<[^>]*>/g, '')
-                    .replace(/ /g, ' ')
+                    .replace(/ /g, ' ')
                     .replace(/\s+/g, '')
                     .replace(/&nbsp;/g, '');
                 document.getElementById('charCount').textContent = text.length;
+                document.getElementById('a4Count').textContent = Math.ceil(text.length / 1000);
             }
 
             function applyStyle(style, value) {
@@ -300,22 +338,30 @@
 
                             lastContent = data.content;
                             myname = data.myid;
+                            comments = data.comments || [];
                             updateCharCount();
+                            updateCommentSidebar();
+                            addClickEventToHighlights();
                             break;
 
                         case 'error':
-                            if ("notfound" == data.status) {
-                                window.location.href = '/';
-                            } else if ("nocookie" == data.status) {
-                                location.reload();
-                            }
-                            break;
+                           if (data.status === "notfound") {
+                               window.location.href = '/';
+                           } else if (data.status === "nocookie") {
+                               location.reload();
+                           } else if (data.status === "verycheck_failed") {
+                               showToast(`厳格チェックエラー: ${data.message}`, 'error', 10000);
+                               document.getElementById("tool").disabled = false;
+                               document.getElementById('editor').contentEditable = true;
+                           }
+                           break;
 
                         case 'content':
                             if (!isProcessing && data.content !== lastContent) {
                                 document.getElementById('editor').innerHTML = sanitizeContent(data.content);
                                 lastContent = data.content;
                                 updateCharCount();
+                                addClickEventToHighlights();
                                 Object.entries(cursorPositions).forEach(([userId, data]) => {
                                     updateCursor(userId, data.position, data.name, data.color);
                                 });
@@ -370,11 +416,9 @@
                                 cancelDiff();
                             }
                             break;
-                        case "spellcheck":
-                            if (document.getElementById('spellcheck').checked) {
-                                suggestionData = data.suggestions;
-                                applySuggestionHighlight(suggestionData);
-                            }
+                        case 'comment':
+                            comments = data.comments;
+                            updateCommentSidebar();
                             break;
                         case "suggest":
                             if (document.getElementById('suggest').checked) {
@@ -382,6 +426,21 @@
                                 suggest(suggestionData);
                             }
                             break;
+                        case "correction_stream":
+                            if (document.getElementById('correction').checked) {
+                                appendCorrection(data.correction);
+                            }
+                            break;
+                        case "correction_stream_end":
+                            // ストリーム終了時の処理（必要であれば）
+                            break;
+                       case 'verycheck_progress':
+                           updateVeryCheckProgress(data.message, data.progress);
+                           break;
+                       case 'verycheck_result':
+                           closeVeryCheckProgressModal();
+                           openVeryCheckModal(data.result);
+                           break;
                     }
                 };
 
@@ -527,11 +586,9 @@
                     suggestionTimeout = setTimeout(sendSuggest, 500);
                 }
 
-                if (document.getElementById('spellcheck').checked) {
-                    // 以前のタイムアウトがあればクリア
-                    clearTimeout(spellCheckTimeout);
-                    // 3秒後にspellCheck関数を呼び出す
-                    spellCheckTimeout = setTimeout(sendspellcheck, 2000); // 2秒後にスペルチェックを実行
+                if (document.getElementById('correction').checked) {
+                    clearTimeout(correctionTimeout);
+                    correctionTimeout = setTimeout(sendCorrection, 5000); // 間隔を短くしてリアルタイム性を向上
                 }
 
                 updateCharCount();
@@ -690,11 +747,20 @@
                 document.getElementById("tool").disabled = true;
                 document.getElementById('editor').contentEditable = false;
                 lastuseai = type;
-                ws.send(JSON.stringify({
-                    type: "ai",
-                    req: type,
-                    status: "gen"
-                }));
+
+               if (type === 'verycheck') {
+                   openVeryCheckProgressModal();
+                   ws.send(JSON.stringify({
+                       type: 'verycheck',
+                       content: document.getElementById('editor').innerHTML
+                   }));
+               } else {
+                   ws.send(JSON.stringify({
+                       type: "ai",
+                       req: type,
+                       status: "gen"
+                   }));
+               }
             }
 
             function showDiff(newText) {
@@ -754,25 +820,14 @@
             function tooltip() {
                 const tooltipContainer = document.getElementById('tooltip-container');
                 const toolButton = document.getElementById('tool');
-                const spellCheckCheckbox = document.getElementById('spellcheck');
                 const suggest = document.getElementById('suggest');
+                const correction = document.getElementById('correction');
                 const buttonRect = toolButton.getBoundingClientRect();
 
                 if (tooltipContainer.style.display === 'none') {
                     tooltipContainer.style.display = 'block';
                     tooltipContainer.style.top = `${buttonRect.bottom + window.scrollY + 5}px`;
                     tooltipContainer.style.left = `${buttonRect.left + window.scrollX}px`;
-
-                    spellCheckCheckbox.onchange = function () {
-                        if (spellCheckCheckbox.checked) {
-                            // チェックボックスがオンになった時、遅延スペルチェックを開始
-                            clearTimeout(spellCheckTimeout); // 以前のタイムアウトをクリア
-                            spellCheckTimeout = setTimeout(sendspellcheck, 3000); // 3秒後にスペルチェックを実行
-                        } else {
-                            removeSuggestionHighlight();
-                            clearTimeout(spellCheckTimeout); // チェックボックスがオフになったらタイムアウトもクリア
-                        }
-                    };
 
                     suggest.onchange = function () {
                         if (suggest.checked) {
@@ -782,6 +837,17 @@
                         } else {
                             removeSuggestionHighlight();
                             clearTimeout(suggestionTimeout); // チェックボックスがオフになったらタイムアウトもクリア
+                        }
+                    };
+
+                    correction.onchange = function () {
+                        if (correction.checked) {
+                            // チェックボックスがオンになった時、遅延スペルチェックを開始
+                            clearTimeout(correctionTimeout); // 以前のタイムアウトをクリア
+                            correctionTimeout = setTimeout(sendCorrection, 2000); // 2秒後にスペルチェックを実行
+                        } else {
+                            removeCorrectionHighlight();
+                            clearTimeout(correctionTimeout); // チェックボックスがオフになったらタイムアウトもクリア
                         }
                     };
 
@@ -842,19 +908,6 @@
                 }
             }
 
-            function sendspellcheck() {
-                if (ws && ws.readyState === WebSocket.OPEN && document.getElementById('spellcheck').checked) {
-                    const editorContent = document.getElementById('editor').innerHTML;
-                    const count = document.getElementById('editor').textContent.length;
-                    if (count > 0) {
-                        ws.send(JSON.stringify({
-                            type: 'spellcheck',
-                            content: editorContent
-                        }));
-                    }
-                }
-            }
-
             function sendSuggest() {
                 if (ws && ws.readyState === WebSocket.OPEN && document.getElementById('suggest').checked) {
                     const editorContent = document.getElementById('editor').innerHTML;
@@ -862,6 +915,23 @@
                     if (count > 0) {
                         ws.send(JSON.stringify({
                             type: 'suggest',
+                            content: editorContent
+                        }));
+                    }
+                }
+            }
+
+            function sendCorrection() {
+                removeCorrectionHighlight();
+                const correctionList = document.getElementById('correction-list');
+                correctionList.innerHTML = ''; // 新しいリクエストの前にリストをクリア
+
+                if (ws && ws.readyState === WebSocket.OPEN && document.getElementById('correction').checked) {
+                    const editorContent = document.getElementById('editor').innerHTML;
+                    const count = document.getElementById('editor').textContent.length;
+                    if (count > 0) {
+                        ws.send(JSON.stringify({
+                            type: 'correction',
                             content: editorContent
                         }));
                     }
@@ -995,6 +1065,246 @@
                 suggestionHighlight = null;
             }
 
+            function appendCorrection(correction) {
+                const editor = document.getElementById('editor');
+                const correctionList = document.getElementById('correction-list');
+                const correctionSidebar = document.getElementById('correction-sidebar');
+                
+                if (correctionSidebar.style.display === 'none') {
+                    correctionSidebar.style.display = 'block';
+                    editor.style.flex = '3';
+                }
+
+                const index = correctionList.children.length + 1; // 1から始まる番号
+                const highlightId = `correction-highlight-${index}`;
+
+                const listItem = document.createElement('li');
+                listItem.innerHTML = `
+                    <p><strong>${index}. 指摘箇所:</strong> ${correction.text}</p>
+                    <p><strong>指摘理由:</strong> ${correction.reason}</p>
+                `;
+                listItem.onclick = () => {
+                    const highlightElement = document.getElementById(highlightId);
+                    if (highlightElement) {
+                        highlightElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        highlightElement.classList.add('flash');
+                        setTimeout(() => highlightElement.classList.remove('flash'), 1000);
+                    }
+                };
+                correctionList.appendChild(listItem);
+
+                // ハイライト処理
+                const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+                let node;
+                while (node = walker.nextNode()) {
+                    const nodeIndex = node.nodeValue.indexOf(correction.text);
+                    if (nodeIndex !== -1) {
+                        if (node.parentElement.classList.contains('correction-highlight')) continue;
+
+                        const range = document.createRange();
+                        range.setStart(node, nodeIndex);
+                        range.setEnd(node, nodeIndex + correction.text.length);
+
+                        const highlightSpan = document.createElement('span');
+                        highlightSpan.id = highlightId;
+                        highlightSpan.className = 'correction-highlight';
+                        
+                        const numberSup = document.createElement('sup');
+                        numberSup.className = 'correction-number';
+                        numberSup.textContent = index;
+                        
+                        highlightSpan.appendChild(numberSup);
+                        highlightSpan.appendChild(document.createTextNode(correction.text));
+                        
+                        range.deleteContents();
+                        range.insertNode(highlightSpan);
+                        
+                        break;
+                    }
+                }
+            }
+
+            function removeCorrectionHighlight() {
+                const editor = document.getElementById('editor');
+                let highlights = editor.querySelectorAll('.correction-highlight');
+                highlights.forEach(span => {
+                    const textNode = document.createTextNode(span.textContent);
+                    // span.id and other attributes are removed with the span itself.
+                    span.parentNode.replaceChild(textNode, span);
+                });
+                editor.normalize(); // テキストノードを結合
+            }
+
+            function addComment(event) {
+                event.preventDefault();
+                const selection = window.getSelection();
+                if (selection.rangeCount === 0 || selection.isCollapsed) {
+                    showToast('コメントを追加するテキストを選択してください。', 'info', 3000);
+                    return;
+                }
+
+                const range = selection.getRangeAt(0);
+                const selectedText = range.toString();
+                if (!selectedText.trim()) return;
+
+                const commentId = `comment-${Date.now()}`;
+                
+                try {
+                    const span = document.createElement('comment-highlight');
+                    span.dataset.commentId = commentId;
+                    range.surroundContents(span);
+
+                    const newComment = {
+                        id: commentId,
+                        text: selectedText,
+                        replies: []
+                    };
+                    comments.push(newComment);
+
+                    sendComments();
+                    sendContent();
+                    
+                    updateCommentSidebar();
+                    addClickEventToHighlights();
+
+                    selection.removeAllRanges();
+                } catch (e) {
+                    console.error("コメントの追加に失敗しました:", e);
+                    showToast('ブロック要素をまたぐなど、複雑な選択範囲にはコメントを追加できません。', 'error', 5000);
+                }
+            }
+
+            function saveComment(commentId) {
+                const comment = comments.find(c => c.id === commentId);
+                if (comment) {
+                    const textarea = document.querySelector(`#${commentId} textarea`);
+                    if(textarea.value.trim() === "") return;
+                    comment.replies.push({ user: myname, text: textarea.value });
+                    sendComments();
+                    updateCommentSidebar();
+                }
+            }
+
+            function deleteComment(commentId) {
+                const editor = document.getElementById('editor');
+                const highlight = editor.querySelector(`comment-highlight[data-comment-id="${commentId}"]`);
+                if (highlight) {
+                    const parent = highlight.parentNode;
+                    while (highlight.firstChild) {
+                        parent.insertBefore(highlight.firstChild, highlight);
+                    }
+                    parent.removeChild(highlight);
+                    parent.normalize();
+                }
+
+                comments = comments.filter(c => c.id !== commentId);
+                sendComments();
+                sendContent();
+                updateCommentSidebar();
+            }
+
+            function sendComments() {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'comment',
+                        comments: comments
+                    }));
+                }
+            }
+
+            function updateCommentSidebar() {
+                const sidebar = document.getElementById('comment-sidebar');
+                sidebar.innerHTML = '';
+                comments.forEach(comment => {
+                    const card = document.createElement('div');
+                    card.id = comment.id;
+                    card.className = 'comment-card';
+                    let repliesHtml = comment.replies.map(reply => `<p><strong>${reply.user.split('-')[0]}:</strong> ${DOMPurify.sanitize(reply.text)}</p>`).join('');
+                    card.innerHTML = `
+                        <p class="comment-text"><strong>元のテキスト:</strong> ${DOMPurify.sanitize(comment.text)}</p>
+                        <div class="comment-replies">${repliesHtml}</div>
+                        <textarea placeholder="返信を入力..."></textarea>
+                        <div class="comment-actions">
+                            <button onclick="saveComment('${comment.id}')">返信</button>
+                            <button onclick="deleteComment('${comment.id}')">削除</button>
+                        </div>
+                    `;
+                    sidebar.appendChild(card);
+                });
+            }
+
+            function addClickEventToHighlights() {
+                const highlights = document.querySelectorAll('comment-highlight');
+                highlights.forEach(span => {
+                    span.onclick = () => {
+                        const commentId = span.dataset.commentId;
+                        const commentCard = document.getElementById(commentId);
+                        if (commentCard) {
+                            if (document.getElementById('comment-sidebar').style.display === 'none') {
+                                toggleCommentSidebar();
+                            }
+                            commentCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            commentCard.classList.add('highlighted');
+                            setTimeout(() => {
+                                commentCard.classList.remove('highlighted');
+                            }, 1500);
+                        }
+                    };
+                });
+            }
+
+            function toggleCommentSidebar() {
+                const sidebar = document.getElementById('comment-sidebar');
+                const editor = document.getElementById('editor');
+                if (sidebar.style.display === 'none' || sidebar.style.display === '') {
+                    sidebar.style.display = 'block';
+                    editor.style.flex = '3';
+                } else {
+                    sidebar.style.display = 'none';
+                    editor.style.flex = '1';
+                }
+            }
+
+           function openVeryCheckModal(result) {
+               const modal = document.getElementById('verycheck-modal');
+               const content = document.getElementById('verycheck-modal-content');
+               
+               // マークダウンをHTMLに変換（簡易版）
+               let htmlResult = result
+                   .replace(/## (.*)/g, '<h2>$1</h2>')
+                   .replace(/### (.*)/g, '<h3>$1</h3>')
+                   .replace(/\* \*(.*)\* \*/g, '<strong>$1</strong>')
+                   .replace(/\* (.*)/g, '<li>$1</li>')
+                   .replace(/- (.*)/g, '<li>$1</li>')
+                   .replace(/\n/g, '<br>');
+
+               content.innerHTML = htmlResult;
+               modal.classList.add('visible');
+               document.getElementById("tool").disabled = false;
+               document.getElementById('editor').contentEditable = true;
+           }
+
+           function closeVeryCheckModal() {
+               const modal = document.getElementById('verycheck-modal');
+               modal.classList.remove('visible');
+           }
+
+           function openVeryCheckProgressModal() {
+               const modal = document.getElementById('verycheck-progress-modal');
+               modal.classList.add('visible');
+               updateVeryCheckProgress('処理を開始しています...', 0);
+           }
+
+           function closeVeryCheckProgressModal() {
+                const modal = document.getElementById('verycheck-progress-modal');
+                modal.classList.remove('visible');
+           }
+
+            function updateVeryCheckProgress(message, progress) {
+                document.getElementById('verycheck-progress-message').textContent = message;
+                const progressBar = document.getElementById('verycheck-progress-bar');
+                progressBar.style.width = progress + '%';
+            }
         </script>
     </body>
 </html>
