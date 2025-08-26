@@ -207,3 +207,143 @@ select {
 .suggest {
     color: #a9acae;
 }
+/* コメント機能 */
+.main-content {
+    display: flex;
+    flex: 1;
+    gap: 20px;
+    overflow: hidden;
+}
+
+#editor {
+    flex: 1; /* サイドバーがない場合は全幅 */
+}
+
+#editor {
+    transition: flex 0.3s ease-in-out;
+}
+
+#correction-sidebar {
+    flex: 1;
+    border-left: 1px solid #e0e0e0;
+    padding-left: 20px;
+    overflow-y: auto;
+    display: none;
+    transition: flex 0.3s ease-in-out;
+}
+
+#correction-sidebar h3 {
+    margin-top: 0;
+}
+
+#correction-list {
+    list-style-type: none;
+    padding: 0;
+}
+
+#correction-list li {
+    background-color: #fffbe6;
+    border: 1px solid #ffe58f;
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 10px;
+}
+
+#correction-list li p {
+    margin: 0 0 5px 0;
+}
+
+#correction-list li:hover {
+    background-color: #fff3cd;
+}
+
+.correction-highlight {
+    background-color: yellow;
+    cursor: pointer;
+    position: relative;
+}
+
+.correction-number {
+    position: absolute;
+    top: -0.5em;
+    left: -0.5em;
+    color: black;
+    width: 1.2em;
+    height: 1.2em;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8em;
+    font-weight: bold;
+}
+
+.correction-highlight.flash {
+    animation: flash-animation 1s;
+}
+
+@keyframes flash-animation {
+    0% { background-color: yellow; }
+    50% { background-color: #ff8c00; }
+    100% { background-color: yellow; }
+}
+
+#comment-sidebar {
+    flex: 1;
+    max-width: 350px;
+    border-left: 1px solid #e0e0e0;
+    padding-left: 20px;
+    overflow-y: auto;
+    background-color: #f9fafb;
+    display: none; /* 初期状態では非表示 */
+    transition: all 0.3s ease-in-out;
+}
+
+comment-highlight, .comment-highlight {
+    background-color: #fffde7;
+    cursor: pointer;
+    border-bottom: 2px solid #ffd700;
+}
+
+.comment-text {
+    font-size: 0.9em;
+    color: #555;
+    margin-bottom: 5px;
+}
+
+.comment-replies {
+    font-size: 0.9em;
+    margin-bottom: 5px;
+    border-left: 2px solid #eee;
+    padding-left: 10px;
+}
+
+.comment-card textarea {
+    width: calc(100% - 20px);
+    padding: 5px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    margin-bottom: 5px;
+}
+
+.comment-actions button {
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 12px;
+    margin-left: 5px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.comment-actions button:last-child {
+    background-color: #f44336;
+}
+.comment-card.highlighted {
+    background-color: #e0e0e0 !important;
+    transition: background-color 0.5s;
+}

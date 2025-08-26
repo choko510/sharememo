@@ -7,12 +7,13 @@ import json
 import uuid
 import asyncio
 import time
-from google import genai
+import google.generativeai as genai
 from dotenv import load_dotenv
 import os
 from sqlalchemy import create_engine, Column, String, Text, Integer
 from sqlalchemy.orm import declarative_base, sessionmaker
 from pydantic import BaseModel, field_validator
+from openai import OpenAI
 
 load_dotenv()
 
@@ -22,7 +23,7 @@ if not os.getenv("GEMINI_APIKEY") or os.getenv("GEMINI_APIKEY") == "":
     else:
         raise ValueError("Please set GEMINI_APIKEY in .env file")
 
-client = genai.Client(api_key=os.getenv("GEMINI_APIKEY"))
+genai.configure(api_key=os.getenv("GEMINI_APIKEY"))
 
 DATABASE_URL = "sqlite:///./memo.db"
 engine = create_engine(DATABASE_URL)
@@ -281,19 +282,25 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                                 "status": "failure",
                             }), memo_id, None)
                         try:
-                            # No need to create model instance with new SDK
+                            model = genai.GenerativeModel("gemini-1.5-flash")
                             response = await asyncio.to_thread(
-                                client.models.generate_content,
-                                model="gemini-2.5-flash",
+                                model.generate_content,
                                 contents=input_text
                             )
-                            if response.text == "nochange" or input_text == response.text:
+                            
+                            response_text = ""
+                            try:
+                                response_text = response.text
+                            except ValueError:
+                                response_text = "nochange"
+
+                            if response_text == "nochange" or input_text == response_text:
                                 await manager.broadcast(json.dumps({
                                     "type": "ai",
                                     "status": "nochange",
                                 }), memo_id, None)
                             if message["req"] == "continued":
-                                new_content = memo_content + response.text
+                                new_content = memo_content + response_text
                                 memo.content = new_content
                                 memo.updated_at = int(time.time())
                                 db.commit()
@@ -303,13 +310,13 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                                     "content": new_content
                                 }), memo_id, None)
                             else:
-                                memo.content = response.text
+                                memo.content = response_text
                                 memo.updated_at = int(time.time())
                                 db.commit()
                                 await manager.broadcast(json.dumps({
                                     "type": "ai",
                                     "status": "success",
-                                    "content": response.text
+                                    "content": response_text
                                 }), memo_id, None)
                         except:
                             await manager.broadcast(json.dumps({
@@ -354,18 +361,295 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                         {memo_content}
                     '''
                 
+                model = genai.GenerativeModel("gemini-1.5-flash")
                 response = await asyncio.to_thread(
-                    client.models.generate_content,
-                    model="gemini-2.5-flash-lite",
+                    model.generate_content,
                     contents=input_text
                 )
-                print(response.text)
+                
+                response_text = ""
+                try:
+                    response_text = response.text
+                except ValueError:
+                    response_text = ""
+
+                print(response_text)
                 await websocket.send_json({
                     "type": "suggest",
-                    "suggestions": response.text
+                    "suggestions": response_text
                 })
-
             
+            elif message["type"] == "correction":
+                memo_content = message["content"]
+                
+                prompt = '''
+                # 命令
+                文章を校正し、問題点を指摘してください。
+                以下の点を重点的にチェックしてください。
+                - 不自然な表現
+                - 曖昧な言葉遣い
+                - 論理の飛躍
+                - 冗長な部分
+
+                # 制約条件
+                - 出力は必ずJSONオブジェクトのストリームとしてください。各JSONオブジェクトは独立してパース可能である必要があります。
+                - 各JSONオブジェクトは以下の構造に従ってください。
+                {
+                    "text": "指摘箇所のテキスト",
+                    "reason": "指摘理由"
+                }
+                - 指摘箇所ごとに、上記のJSONオブジェクトを一つずつ出力してください。
+                - 指摘箇所がない場合は、何も出力しないでください。
+                - HTMLタグは無視してください。
+
+                # 対象文章
+                '''
+                input_text = prompt + memo_content
+                
+                try:
+                    # ストリーミング対応のモデルをインスタンス化
+                    model = genai.GenerativeModel("gemini-1.5-flash")
+                    # ストリーミングモードでAPIを呼び出す
+                    response_stream = await asyncio.to_thread(
+                        model.generate_content,
+                        contents=input_text,
+                        stream=True
+                    )
+                    
+                    # ストリームで受け取ったデータを順次クライアントに送信
+                    buffer = ""
+                    for chunk in response_stream:
+                        buffer += chunk.text
+                        # JSONオブジェクトが完成した可能性のある部分を処理
+                        while '{' in buffer and '}' in buffer:
+                            start_index = buffer.find('{')
+                            end_index = buffer.find('}') + 1
+                            json_str = buffer[start_index:end_index]
+                            try:
+                                correction_data = json.loads(json_str)
+                                await websocket.send_json({
+                                    "type": "correction_stream",
+                                    "correction": correction_data
+                                })
+                                buffer = buffer[end_index:]
+                            except json.JSONDecodeError:
+                                # JSONとして不完全な場合は次のチャンクを待つ
+                                break
+                    
+                    # ストリーム終了を通知
+                    await websocket.send_json({"type": "correction_stream_end"})
+
+                except Exception as e:
+                    print(f"Error during correction streaming: {e}")
+                    await websocket.send_json({
+                        "type": "correction",
+                        "corrections": [] # エラー時は空のリストを返す
+                    })
+
+
+            elif message["type"] == "verycheck":
+                memo_content = message["content"]
+
+                if not os.getenv("OPENROUTER_APIKEY"):
+                    await websocket.send_json({
+                        "type": "error",
+                        "status": "verycheck_failed",
+                        "message": "OPENROUTER_APIKEY is not set in .env file."
+                    })
+                    return
+                
+                input_text = f'''
+                # 命令  
+                志望理由書を厳格に校正してください。  
+                誤字脱字、不自然な表現、曖昧な言葉遣い、論理の飛躍、冗長な部分を修正してください。  
+                また、全体的な問題点・修正の優先順位・部分的な修正例・カテゴリ別スコア・完成文章を必ず提示してください。  
+
+                # 制約条件  
+                - 元の文章の意図や構造を保ちながら、明確かつ論理的で説得力のある表現に整えてください。  
+                - 改行位置を大きく変更しないでください。  
+                - 出力形式は以下の順序で必ず記載してください。  
+
+                ---
+
+                ## 出力フォーマット  
+
+                ### 1. 全体的な問題点（3点以上）  
+                文章全体を読んで気づいた改善点を列挙してください。  
+
+                ### 2. 修正の優先順位リスト（重要度 高→低）  
+                最も重要な修正点から順に番号をつけてください。  
+
+                ### 3. 部分的な修正例（原文と修正文の対比）  
+                - 原文：〜〜〜  
+                - 修正文：〜〜〜  
+
+                ### 4. カテゴリ別スコア（100点満点）  
+                各観点を採点し、合計も示してください。  
+                - 論理性：◯点 / 20  
+                - 明確さ・具体性：◯点 / 20  
+                - 語彙・表現力：◯点 / 20  
+                - 志望理由の説得力：◯点 / 20  
+                - 構成力・流れ：◯点 / 20  
+                - **合計：◯点 / 100**  
+
+                ---
+
+                # 修正対象文章  
+                {memo_content}  
+
+                ---
+
+                ## 出力例（サンプル）
+
+                ### 1. 全体的な問題点  
+                - 志望理由が抽象的で「なぜこの大学でなければならないか」が弱い。  
+                - 将来の目標と大学での学びが十分に結びついていない。  
+                - 表現が冗長で、同じ内容を繰り返している箇所がある。  
+
+                ### 2. 修正の優先順位リスト  
+                1. 志望理由の具体性を高める（最重要）  
+                2. 将来の目標と大学での学びを論理的に接続する  
+                3. 冗長な部分を削除し、文章を簡潔にする  
+
+                ### 3. 部分的な修正例  
+                - 原文：「私は将来、人の役に立つ仕事に就きたいと考えています。」  
+                - 修正文：「私は将来、地域医療に貢献できる医師として、患者一人ひとりに寄り添う仕事に就きたいと考えています。」  
+
+                ### 4. カテゴリ別スコア  
+                - 論理性：14 / 20  
+                - 明確さ・具体性：12 / 20  
+                - 語彙・表現力：15 / 20  
+                - 志望理由の説得力：13 / 20  
+                - 構成力・流れ：16 / 20  
+                - **合計：70 / 100**  
+                '''
+                
+                # 3つのAIからのレスポンスを非同期で取得
+                async def get_responses(websocket: WebSocket):
+                    await websocket.send_json({"type": "verycheck_progress", "message": "3つのAIに同時にリクエストを送信中...", "progress": 25})
+
+                    # gemini
+                    task1 = asyncio.to_thread(
+                        genai.GenerativeModel("gemini-2.5-flash").generate_content,
+                        contents=input_text
+                    )
+                    
+                    # openrouter client
+                    openrouterclient = OpenAI(
+                        base_url="https://openrouter.ai/api/v1",
+                        api_key=os.getenv("OPENROUTER_APIKEY"),
+                    )
+
+                    # deepseek
+                    task2 = asyncio.to_thread(
+                        openrouterclient.chat.completions.create,
+                        extra_headers={
+                            "HTTP-Referer": "choko.cc",
+                            "X-Title": "choko",
+                        },
+                        model="deepseek/deepseek-chat-v3.1",
+                        messages=[{"role": "user", "content": input_text}]
+                    )
+                    
+                    # qwen
+                    task3 = asyncio.to_thread(
+                        openrouterclient.chat.completions.create,
+                        extra_headers={
+                            "HTTP-Referer": "choko.cc",
+                            "X-Title": "choko",
+                        },
+                        model="qwen/qwen3-235b-a22b-thinking-2507",
+                        messages=[{"role": "user", "content": input_text}]
+                    )
+                    
+                    responses = await asyncio.gather(task1, task2, task3)
+                    return responses
+
+                try:
+                    response1, response2, response3 = await get_responses(websocket)
+                    
+                    await websocket.send_json({"type": "verycheck_progress", "message": "AIからのレスポンスを統合中...", "progress": 90})
+
+                    gemini_response_text = ""
+                    try:
+                        gemini_response_text = response1.text
+                    except ValueError:
+                        gemini_response_text = "（回答がありませんでした）"
+
+                    response_texts = {
+                        "gemini": gemini_response_text,
+                        "deepseek": response2.choices[0].message.content,
+                        "qwen": response3.choices[0].message.content
+                    }
+
+                    integration_prompt = f"""
+                    # 命令
+                    以下の3つのAIによる志望理由書の評価と修正案を統合し、最も優れた最終的な成果物を作成してください。
+
+                    # 入力
+                    - AI1 (Gemini) の回答:
+                    {response_texts['gemini']}
+
+                    - AI2 (DeepSeek) の回答:
+                    {response_texts['deepseek']}
+
+                    - AI3 (Qwen) の回答:
+                    {response_texts['qwen']}
+
+                    - AI4 (あなたの回答):
+                    ここにあなたの回答
+
+                    # タスク
+                    1.  **各AIの長所と短所を分析**: それぞれのAIの評価の鋭さ、提案の質、表現の自然さなどを比較してください。
+                    2.  **評価の統合**: 4つのAIの「全体的な問題点」「修正の優先順位」を参考に、より網羅的で的確な評価を生成してください。重複する指摘はまとめ、より重要な点を強調してください。
+                    3.  **修正案の統合**: 4つのAIの「部分的な修正例」「完成文章」を比較検討し、それぞれの良い点を取り入れた最高の「完成文章」を作成してください。元の文章の意図を尊重しつつ、論理的で説得力のある文章に仕上げてください。
+                    4.  **スコアの再評価**: 統合された評価と完成文章に基づき、「カテゴリ別スコア」を再評価してください。
+
+                    # 出力フォーマット
+                    以下の形式で、最終的な成果物のみを出力してください。
+
+                    ## 1. 統合された全体的な問題点
+                    （4つのAIの指摘を統合し、3〜5点にまとめる）
+
+                    ## 2. 統合された修正の優先順位リスト
+                    （最も重要な修正点から順にリストアップ）
+
+                    ## 3. 最終的な完成文章
+                    （4つのAIの提案の良いところを取り入れた、最も優れた文章）
+
+                    ## 4. 最終的なカテゴリ別スコア
+                    - 論理性：◯点 / 20
+                    - 明確さ・具体性：◯点 / 20
+                    - 語彙・表現力：◯点 / 20
+                    - 志望理由の説得力：◯点 / 20
+                    - 構成力・流れ：◯点 / 20
+                    - **合計：◯点 / 100**
+                    """
+
+                    integration_model = genai.GenerativeModel("gemini-2.5-pro")
+                    integrated_response = await asyncio.to_thread(
+                        integration_model.generate_content,
+                        contents=integration_prompt
+                    )
+
+                    integrated_response_text = ""
+                    try:
+                        integrated_response_text = integrated_response.text
+                    except ValueError:
+                        integrated_response_text = "（回答がありませんでした）"
+
+                    await websocket.send_json({
+                        "type": "verycheck_result",
+                        "result": integrated_response_text
+                    })
+
+                except Exception as e:
+                    print(f"Error during verycheck: {e}")
+                    await websocket.send_json({
+                        "type": "error",
+                        "status": "verycheck_failed",
+                        "message": str(e)
+                    })
 
     except WebSocketDisconnect:
         await manager.disconnect(memo_id, user_id)
