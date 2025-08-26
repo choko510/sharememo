@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Any
 import json
 import uuid
 import time
-import google.generativeai as genai
+from google import genai
 from dotenv import load_dotenv
 import os
 from sqlalchemy import create_engine, Column, String, Text, Integer
@@ -21,7 +21,7 @@ if not os.getenv("GEMINI_APIKEY") or os.getenv("GEMINI_APIKEY") == "":
     else:
         raise ValueError("Please set GEMINI_APIKEY in .env file")
 
-genai.configure(api_key=os.getenv("GEMINI_APIKEY"))
+client = genai.Client(api_key=os.getenv("GEMINI_APIKEY"))
 
 DATABASE_URL = "sqlite:///./memo.db"
 engine = create_engine(DATABASE_URL)
@@ -278,8 +278,11 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                                 "status": "failure",
                             }), memo_id, None)
                         try:
-                            model = genai.GenerativeModel("gemini-2.0-flash")
-                            response = model.generate_content(input_text)
+                            # No need to create model instance with new SDK
+                            response = client.models.generate_content(
+                                model="gemini-2.5-flash",
+                                contents=input_text
+                            )
                             if response.text == "nochange" or input_text == response.text:
                                 await manager.broadcast(json.dumps({
                                     "type": "ai",
@@ -347,8 +350,10 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                         {memo_content}
                     '''
                 
-                model = genai.GenerativeModel("gemini-2.0-flash-lite")
-                response = model.generate_content(input_text)
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash-lite",
+                    contents=input_text
+                )
                 print(response.text)
                 await websocket.send_json({
                     "type": "suggest",
