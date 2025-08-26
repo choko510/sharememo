@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse
 from typing import Dict, List, Optional, Any
 import json
 import uuid
+import asyncio
 import time
 from google import genai
 from dotenv import load_dotenv
@@ -240,6 +241,7 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                                 修正文章に含まれるHTMLタグは、基本的にそのまま残してください。ただし、明確に不要な場合のみ削除してください。
                                 改行は必ず<br>タグを使用してください。
                                 変更点がない場合は対象の文章を含まずに、"nochange"とだけ出力して下さい。
+                                "nochange"と出力する場合は、何も他のいかなる文字も含めないで下さい。
                             #修正対象文章
                                 {memo_content}
                             '''
@@ -255,6 +257,7 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                                 修正文章に含まれるHTMLタグは、基本的にそのまま残してください。ただし、明確に不要な場合のみ削除してください。
                                 改行は必ず<br>タグを使用してください。
                                 変更点がない場合は対象の文章を含まずに、"nochange"とだけ出力して下さい。
+                                "nochange"と出力する場合は、何も他のいかなる文字も含めないで下さい。
                             #対象文章
                                 {memo_content}
                             '''
@@ -279,7 +282,8 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                             }), memo_id, None)
                         try:
                             # No need to create model instance with new SDK
-                            response = client.models.generate_content(
+                            response = await asyncio.to_thread(
+                                client.models.generate_content,
                                 model="gemini-2.5-flash",
                                 contents=input_text
                             )
@@ -350,7 +354,8 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                         {memo_content}
                     '''
                 
-                response = client.models.generate_content(
+                response = await asyncio.to_thread(
+                    client.models.generate_content,
                     model="gemini-2.5-flash-lite",
                     contents=input_text
                 )
@@ -359,6 +364,8 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                     "type": "suggest",
                     "suggestions": response.text
                 })
+
+            
 
     except WebSocketDisconnect:
         await manager.disconnect(memo_id, user_id)

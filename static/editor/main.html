@@ -60,11 +60,15 @@
 
             <div id="editor" contenteditable="true" onpaste="handlePaste(event)" oninput="handleInput()"></div>
 
-            <div class="share-link">
-                <span class="countbox">文字数: <span id="charCount">0</span></span>
-                <button onclick="copyAll()" class="format-button">コピー</button>
-                <button onclick="openModal()" class="format-button">共有</button>
-                <span class="countbox">接続中のユーザー: <span id="activeUsers"></span></span>
+            <div class="footer-info">
+                <div class="status-bar">
+                    <span>文字数: <span id="charCount">0</span></span>
+                    <span>接続中のユーザー: <span id="activeUsers"></span></span>
+                </div>
+                <div class="actions">
+                    <button onclick="copyAll()" class="format-button">コピー</button>
+                    <button onclick="openModal()" class="format-button">共有</button>
+                </div>
             </div>
 
         </div>
@@ -102,10 +106,10 @@
 
         <link rel="stylesheet" href="static/editor/modal.css">
         <link rel="stylesheet" href="static/editor/toast.css">
-        <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.3/dist/purify.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/micromodal@0.4.10/dist/micromodal.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/micromodal@0.6.1/dist/micromodal.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/diff@7.0.0/dist/diff.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/diff@8.0.2/dist/diff.min.js"></script>
         <script>
             let ws;
             let memoId;
@@ -512,14 +516,15 @@
             }
 
             function handleInput() {
+                const editor = document.getElementById('editor');
+                const suggests = editor.querySelectorAll('.suggest');
+                suggests.forEach(suggest => suggest.remove());
+
                 if (document.getElementById('suggest').checked) {
                     // 以前のタイムアウトがあればクリア
                     clearTimeout(suggestionTimeout);
-                    // 3秒後にspellCheck関数を呼び出す
-                    suggestionTimeout = setTimeout(sendSuggest, 2000); // 2秒後にスペルチェックを実行
-                } else {
-                    const suggests = editor.querySelectorAll('.suggest');
-                    suggests.forEach(suggest => suggest.remove());
+                    // 500ミリ秒後にspellCheck関数を呼び出す
+                    suggestionTimeout = setTimeout(sendSuggest, 500);
                 }
 
                 if (document.getElementById('spellcheck').checked) {
