@@ -347,7 +347,3 @@ comment-highlight, .comment-highlight {
     background-color: #e0e0e0 !important;
     transition: background-color 0.5s;
 }
-.comment-card.highlighted {
-    background-color: #e0e0e0 !important;
-    transition: background-color 0.5s;
-}
