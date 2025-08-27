@@ -17,7 +17,7 @@
                 <a href="../" class="format-button" style="color: black;text-decoration: none;">メニュー</a>
 
                 <label for="fontSize">文字サイズ:
-                    <select id="fontSize">
+                    <select id="fontSize" onchange="applyFormat('fontSize', event.target.value)">
                         <option value="8px">8px</option>
                         <option value="10px">10px</option>
                         <option value="12px">12px</option>
@@ -33,18 +33,18 @@
                 </label>
 
                 <label for="textColor">文字色
-                    <input type="color" id="textColor" value="#000000">
+                    <input type="color" id="textColor" value="#000000" oninput="applyFormat('textColor', event.target.value)">
                 </label>
 
                 <label for="bgColor">背景色
-                    <input type="color" id="bgColor" value="#ffffff">
+                    <input type="color" id="bgColor" value="#ffffff" oninput="applyFormat('bgColor', event.target.value)">
                 </label>
 
-                <button onclick="formatSelection('bold')" class="format-button">
+                <button onclick="applyFormat('bold', true)" class="format-button">
                     太字
                 </button>
 
-                <button onclick="formatSelection('strike')" class="format-button">
+                <button onclick="applyFormat('strike', true)" class="format-button">
                     取り消し線
                 </button>
 
@@ -54,6 +54,7 @@
 
                 <button onmousedown="addComment(event)" class="format-button">コメント</button>
                 <button onclick="toggleCommentSidebar()" class="format-button">コメント表示/非表示</button>
+                <button onclick="toggleHistorySidebar()" class="format-button">編集履歴</button>
             </div>
 
             <div id="diff-buttons" style="display:none">
@@ -69,6 +70,10 @@
                     <ul id="correction-list"></ul>
                  </div>
                 <div id="comment-sidebar"></div>
+                <div id="history-sidebar" style="display: none;">
+                    <h3>編集履歴</h3>
+                    <ul id="history-list"></ul>
+                </div>
             </div>
 
             <div class="footer-info">
@@ -105,6 +110,7 @@
             <div class="tooltip-item" onclick="AIreq('rewrite')">AI添削</div>
             <div class="tooltip-item" onclick="AIreq('makeword')">AI文字数稼ぎ</div>
             <div class="tooltip-item" onclick="AIreq('continued')">AIで続きを書く</div>
+            <div class="tooltip-item" onclick="AIreq('summarize')">AIで要約</div>
             <div class="tooltip-item" onclick="AIreq('verycheck')">AIで厳格チェック</div>
             <hr>
             <div class="tooltip-item" ><input type="checkbox" id="correction">リアルタイム添削</div>
@@ -141,21 +147,38 @@
                </div>
            </div>
        </div>
+
+       <div id="ai-modal" class="modal-overlay">
+           <div class="modal-container">
+               <div class="modal-header">
+                   <h2 class="modal-title" id="ai-modal-title">AI Tool</h2>
+                   <button class="modal-close-btn" onclick="closeAiModal()">&times;</button>
+               </div>
+               <div class="modal-content" id="ai-modal-content">
+               </div>
+               <div class="modal-footer" id="ai-modal-footer">
+               </div>
+           </div>
+       </div>
         <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/micromodal@0.6.1/dist/micromodal.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/diff@8.0.2/dist/diff.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/loro-crdt/loro-crdt.iife.js"></script>
         <script>
             let ws;
             let memoId;
             let myname;
-            let isProcessing = false;
+            let loroDoc;
+            let loroText;
+            let lastSyncedVersion = null;
             let cursorPositions = {};
             let lastContent = '';
             let connection_count = 0;
             let oldText = '';
             let newText = '';
             let lastuseai;
+            let lastAiPayload = null;
             let suggestionData = null;
             let suggestionHighlight;
             let suggestionTimeout;
@@ -201,6 +224,43 @@
                     }
                 });
 
+                editor.addEventListener('beforeinput', (event) => {
+                    const { inputType, data } = event;
+                    const selection = window.getSelection();
+                    if (!selection.rangeCount) return;
+
+                    const range = selection.getRangeAt(0);
+                    const start = getTextPosition(range.startContainer, range.startOffset);
+                    const end = getTextPosition(range.endContainer, range.endOffset);
+
+                    event.preventDefault();
+
+                    switch (inputType) {
+                        case 'insertText':
+                            loroText.delete(start, end - start);
+                            loroText.insert(start, data);
+                            break;
+                        case 'insertParagraph':
+                            loroText.delete(start, end - start);
+                            loroText.insert(start, '\n');
+                            break;
+                        case 'deleteContentBackward':
+                            loroText.delete(start - 1, 1);
+                            break;
+                        case 'deleteContentForward':
+                            loroText.delete(start, 1);
+                            break;
+                        default:
+                            console.log('Unhandled inputType:', inputType);
+                            return; // Don't send ops for unhandled events
+                    }
+
+                    const newVersion = loroDoc.oplogVersion();
+                    const ops = loroDoc.exportFrom(lastSyncedVersion);
+                    sendLoroOps(ops);
+                    lastSyncedVersion = newVersion;
+                });
+
                 init();
             });
 
@@ -216,39 +276,26 @@
                 document.getElementById('a4Count').textContent = Math.ceil(text.length / 1000);
             }
 
-            function applyStyle(style, value) {
+            function applyFormat(formatKey, formatValue) {
                 const selection = window.getSelection();
-                if (!selection.rangeCount) return;
+                if (!selection.rangeCount || selection.isCollapsed) return;
 
                 const range = selection.getRangeAt(0);
-                const contents = range.extractContents();
-                const fragment = document.createDocumentFragment();
 
-                Array.from(contents.childNodes).forEach(node => {
-                    if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'SPAN') {
-                        const currentStyle = node.style[style];
-                        if (currentStyle === value) {
-                            fragment.appendChild(node);
-                        } else {
-                            node.style[style] = value;
-                            fragment.appendChild(node);
-                        }
-                    } else if (node.nodeType === Node.TEXT_NODE) {
-                        const span = document.createElement('span');
-                        span.style[style] = value;
-                        span.textContent = node.textContent;
-                        fragment.appendChild(span);
-                    } else {
-                        fragment.appendChild(node);
-                    }
-                });
+                const start = getTextPosition(range.startContainer, range.startOffset);
+                const end = getTextPosition(range.endContainer, range.endOffset);
 
-                range.deleteContents();
-                range.insertNode(fragment);
+                if (start === end) return;
 
-                cleanup();
-                updateCharCount();
-                sendContent();
+                // Apply the mark to the LoroText object
+                loroText.mark({ start, end }, formatKey, formatValue);
+
+                // The subscribe function will handle re-rendering.
+                // Now, send the updates.
+                const newVersion = loroDoc.oplogVersion();
+                const ops = loroDoc.exportFrom(lastSyncedVersion);
+                sendLoroOps(ops);
+                lastSyncedVersion = newVersion;
             }
 
             function cleanup() {
@@ -290,6 +337,13 @@
 
 
             async function init() {
+                // Loro initialization
+                loroDoc = new Loro.LoroDoc();
+                loroDoc.setRecordTimestamp(true);
+                loroText = loroDoc.getText("text");
+                loroDoc.subscribe(renderEditorFromLoro);
+                lastSyncedVersion = loroDoc.oplogVersion();
+
                 const urlParams = new URLSearchParams(window.location.search);
                 memoId = urlParams.get('id');
 
@@ -330,18 +384,37 @@
 
                     switch (data.type) {
                         case 'init':
-                            document.getElementById('editor').innerHTML = sanitizeContent(data.content);
+                            // When the backend is updated, it will send a snapshot
+                            if (data.snapshot) {
+                                const snapshotBytes = new Uint8Array(atob(data.snapshot).split('').map(char => char.charCodeAt(0)));
+                                if (snapshotBytes.byteLength > 0) {
+                                    loroDoc.import(snapshotBytes);
+                                    lastSyncedVersion = loroDoc.oplogVersion();
+                                }
+                            }
+                            renderEditorFromLoro();
+
 
                             if (lastContent !== "") {//再接続時
                                 showToast('接続しました。', 'success', 4000);
                             }
 
-                            lastContent = data.content;
+                            lastContent = loroText.toString(); // Update from Loro
                             myname = data.myid;
                             comments = data.comments || [];
-                            updateCharCount();
                             updateCommentSidebar();
                             addClickEventToHighlights();
+                            break;
+
+                        case 'op':
+                            const binaryString = atob(data.op);
+                            const len = binaryString.length;
+                            const bytes = new Uint8Array(len);
+                            for (let i = 0; i < len; i++) {
+                                bytes[i] = binaryString.charCodeAt(i);
+                            }
+                            loroDoc.import(bytes);
+                            lastSyncedVersion = loroDoc.oplogVersion();
                             break;
 
                         case 'error':
@@ -398,10 +471,25 @@
                                 document.getElementById("tool").disabled = true;
                                 document.getElementById('editor').contentEditable = false;
                             } else if (data.status == "success") {
-                                oldText = document.getElementById('editor').innerHTML;
-                                newText = data.content;
-                                showDiff(data.content);
-                                document.getElementById('diff-buttons').style.display = 'block';
+                                if (lastuseai === 'summarize') {
+                                    const modal = document.getElementById('ai-modal');
+                                    const title = document.getElementById('ai-modal-title');
+                                    const content = document.getElementById('ai-modal-content');
+                                    const footer = document.getElementById('ai-modal-footer');
+
+                                    title.textContent = 'AIによる要約結果';
+                                    content.innerHTML = `<div style="white-space: pre-wrap; max-height: 400px; overflow-y: auto; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">${data.content}</div>`;
+                                    footer.innerHTML = `<button class="modal__btn" onclick="closeAiModal()">閉じる</button>`;
+                                    modal.classList.add('visible');
+
+                                    document.getElementById('editor').contentEditable = true;
+                                    document.getElementById("tool").disabled = false;
+                                } else {
+                                    oldText = document.getElementById('editor').innerHTML;
+                                    newText = data.content;
+                                    showDiff(data.content);
+                                    document.getElementById('diff-buttons').style.display = 'block';
+                                }
                             } else if (data.status == "failure") {
                                 document.getElementById('editor').contentEditable = true;
                                 document.getElementById("tool").disabled = false;
@@ -454,6 +542,16 @@
                 ws.onerror = function () {
                     showToast('接続エラーが発生しました。ページを再読み込みしてください。', 'error', 2800);
                 };
+            }
+
+            function sendLoroOps(ops) {
+                if (ws && ws.readyState === WebSocket.OPEN && ops.byteLength > 0) {
+                    const base64 = btoa(String.fromCharCode.apply(null, ops));
+                    ws.send(JSON.stringify({
+                        type: 'op',
+                        op: base64
+                    }));
+                }
             }
 
             function wsSend(type, status) {
@@ -527,53 +625,6 @@
                 return null;
             }
 
-            function formatSelection(style, value) {
-                const selection = window.getSelection();
-                if (!selection.rangeCount) return;
-
-                const range = selection.getRangeAt(0);
-                const contents = range.extractContents();
-                const fragment = document.createDocumentFragment();
-
-                let hasBold = false;
-                if (style === 'bold') {
-                    Array.from(contents.childNodes).forEach(node => {
-                        if (node.nodeType === Node.ELEMENT_NODE &&
-                            node.tagName === 'SPAN' &&
-                            node.style.fontWeight === 'bold') {
-                            hasBold = true;
-                        }
-                    });
-                }
-
-                Array.from(contents.childNodes).forEach(node => {
-                    if (style === 'bold') {
-                        if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'SPAN') {
-                            if (hasBold && node.style.fontWeight === 'bold') {
-                                node.style.fontWeight = 'normal';
-                            } else if (!hasBold) {
-                                node.style.fontWeight = 'bold';
-                            }
-                            fragment.appendChild(node);
-                        } else {
-                            const span = document.createElement('span');
-                            span.style.fontWeight = hasBold ? 'normal' : 'bold';
-                            span.appendChild(node.cloneNode(true));
-                            fragment.appendChild(span);
-                        }
-                    } else if (style === 'strike') {
-                        const span = document.createElement('span');
-                        span.style.textDecoration = 'line-through';
-                        span.appendChild(node.cloneNode(true));
-                        fragment.appendChild(span);
-                    }
-                });
-
-                range.insertNode(fragment);
-                cleanup();
-                sendContent();
-            }
-
             function handleInput() {
                 const editor = document.getElementById('editor');
                 const suggests = editor.querySelectorAll('.suggest');
@@ -590,36 +641,6 @@
                     clearTimeout(correctionTimeout);
                     correctionTimeout = setTimeout(sendCorrection, 5000); // 間隔を短くしてリアルタイム性を向上
                 }
-
-                updateCharCount();
-                sendContent();
-            }
-
-            let sendTimeout;
-            function sendContent() {
-                isProcessing = true;
-                clearTimeout(sendTimeout);
-
-                const editor = document.getElementById('editor');
-
-                const cursors = editor.querySelectorAll('.cursor');
-                cursors.forEach(cursor => cursor.remove());
-
-                const suggest = editor.querySelectorAll('.suggest');
-                suggest.forEach(suggest => suggest.remove());
-
-                sendTimeout = setTimeout(() => {
-                    const currentContent = editor.innerHTML;
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        lastContent = currentContent;
-                        ws.send(JSON.stringify({
-                            type: 'content',
-                            content: currentContent
-                        }));
-                    }
-
-                    isProcessing = false;
-                }, 50);
             }
 
             //document.getElementById('editor').addEventListener('mouseup', mouseup); //keydownでtab押下時と競合するため、コメントアウト
@@ -731,36 +752,122 @@
                 MicroModal.show('modal-1');
             }
 
-            function AIreq(type) {
+            function convertDeltaToHtml(delta) {
+                let html = '';
+                if (!Array.isArray(delta)) return html;
 
-                if (type == "regen") {
-                    wsSend('ai', 'cancel');
-                    ws.send(JSON.stringify({
-                        type: "ai",
-                        req: lastuseai,
-                        status: "gen"
-                    }));
-                    return
+                for (const op of delta) {
+                    if (typeof op.insert !== 'string') continue;
+
+                    let text = op.insert.replace(/\n/g, '<br>');
+
+                    if (op.attributes) {
+                        let style = '';
+                        for (const [key, value] of Object.entries(op.attributes)) {
+                            if (key === 'bold' && value) {
+                                style += 'font-weight: bold;';
+                            } else if (key === 'strike' && value) {
+                                style += 'text-decoration: line-through;';
+                            } else if (key === 'fontSize') {
+                                style += `font-size: ${value};`;
+                            } else if (key === 'textColor') {
+                                style += `color: ${value};`;
+                            } else if (key === 'bgColor') {
+                                style += `background-color: ${value};`;
+                            }
+                        }
+
+                        if (style) {
+                            html += `<span style="${style}">${text}</span>`;
+                        } else {
+                            html += text;
+                        }
+                    } else {
+                        html += text;
+                    }
+                }
+                return html;
+            }
+
+            function renderEditorFromLoro() {
+                const editor = document.getElementById('editor');
+                const delta = loroText.toDelta();
+                editor.innerHTML = convertDeltaToHtml(delta);
+                updateCharCount();
+            }
+
+            function AIreq(type) {
+                if (type === "regen") {
+                    if (lastAiPayload) {
+                        wsSend('ai', 'cancel');
+                        ws.send(JSON.stringify(lastAiPayload));
+                    }
+                    return;
                 }
 
                 document.getElementById('tooltip-container').style.display = 'none';
-                document.getElementById("tool").disabled = true;
-                document.getElementById('editor').contentEditable = false;
                 lastuseai = type;
 
-               if (type === 'verycheck') {
-                   openVeryCheckProgressModal();
-                   ws.send(JSON.stringify({
-                       type: 'verycheck',
-                       content: document.getElementById('editor').innerHTML
-                   }));
-               } else {
-                   ws.send(JSON.stringify({
-                       type: "ai",
-                       req: type,
-                       status: "gen"
-                   }));
-               }
+                if (type === 'continued' || type === 'makeword') {
+                    const modal = document.getElementById('ai-modal');
+                    const title = document.getElementById('ai-modal-title');
+                    const content = document.getElementById('ai-modal-content');
+                    const footer = document.getElementById('ai-modal-footer');
+
+                    const typeText = type === 'continued' ? '続きを書く' : '文字量を増やす';
+                    title.textContent = `AIで${typeText}`;
+                    content.innerHTML = `
+                        <p>生成するおおよその文字数を入力してください（10～2000字）。</p>
+                        <input type="number" id="ai-char-count" placeholder="指定しない場合はAIにおまかせ" min="10" max="2000" style="width: 100%; padding: 8px; box-sizing: border-box;">
+                    `;
+                    footer.innerHTML = `<button class="modal__btn" onclick="executeAiRequest('${type}')">実行</button>`;
+
+                    modal.classList.add('visible');
+                    return;
+                }
+
+                executeAiRequest(type);
+            }
+
+            function executeAiRequest(type) {
+                closeAiModal();
+                document.getElementById("tool").disabled = true;
+                document.getElementById('editor').contentEditable = false;
+
+                if (type === 'verycheck') {
+                    openVeryCheckProgressModal();
+                    ws.send(JSON.stringify({
+                        type: 'verycheck',
+                        content: document.getElementById('editor').innerHTML
+                    }));
+                    return;
+                }
+
+                let payload = {
+                    type: "ai",
+                    req: type,
+                    status: "gen"
+                };
+
+                if (type === 'continued' || type === 'makeword') {
+                    const charCountInput = document.getElementById('ai-char-count');
+                    if (charCountInput && charCountInput.value) {
+                        payload.char_count = parseInt(charCountInput.value, 10);
+                    }
+                }
+
+                if (type === 'continued') {
+                    const selection = window.getSelection();
+                    let cursor_pos = -1;
+                    if (selection.rangeCount > 0) {
+                        const range = selection.getRangeAt(0);
+                        cursor_pos = getTextPosition(range.startContainer, range.startOffset);
+                    }
+                    payload.cursor_pos = cursor_pos;
+                }
+
+                lastAiPayload = payload;
+                ws.send(JSON.stringify(payload));
             }
 
             function showDiff(newText) {
@@ -1265,6 +1372,72 @@
                 }
             }
 
+            function toggleHistorySidebar() {
+                const sidebar = document.getElementById('history-sidebar');
+                const editor = document.getElementById('editor');
+                const historyList = document.getElementById('history-list');
+
+                if (sidebar.style.display === 'none' || sidebar.style.display === '') {
+                    // Opening the sidebar
+                    sidebar.style.display = 'block';
+                    editor.style.flex = '3';
+                    editor.contentEditable = false; // Make editor read-only
+                    historyList.innerHTML = '<li>Loading history...</li>';
+
+                    // Populate the history list
+                    setTimeout(() => { // Use timeout to allow UI to update first
+                        const changes = loroDoc.getAllChanges();
+                        const timestamps = Array.from(new Set([...changes.values()].flat().map(x => x.timestamp).filter(x => !!x)));
+                        timestamps.sort((a, b) => b - a); // Sort descending, newest first
+
+                        historyList.innerHTML = '';
+                        if (timestamps.length === 0) {
+                            historyList.innerHTML = '<li>No history yet.</li>';
+                            return;
+                        }
+
+                        timestamps.forEach(ts => {
+                            const li = document.createElement('li');
+                            li.textContent = new Date(ts).toLocaleString();
+                            li.style.cursor = 'pointer';
+                            li.onclick = () => viewHistory(ts);
+                            historyList.appendChild(li);
+                        });
+                    }, 10);
+
+                } else {
+                    // Closing the sidebar
+                    sidebar.style.display = 'none';
+                    editor.style.flex = '1';
+                    editor.contentEditable = true; // Make editor editable again
+                    loroDoc.attach(); // Restore to the latest version
+                }
+            }
+
+            function getFrontiersForTimestamp(changes, ts) {
+                const frontiers = [];
+                changes.forEach((peerChanges, peer) => {
+                    let counter = -1;
+                    for (const change of peerChanges) {
+                        if (change.timestamp <= ts) {
+                            counter = Math.max(counter, change.counter + change.length - 1);
+                        }
+                    }
+                    if (counter > -1) {
+                        frontiers.push({ peer, counter });
+                    }
+                });
+                return frontiers;
+            };
+
+            function viewHistory(timestamp) {
+                const changes = loroDoc.getAllChanges();
+                const frontiers = getFrontiersForTimestamp(changes, timestamp);
+                loroDoc.checkout(frontiers);
+                // The subscription will automatically call renderEditorFromLoro
+                showToast(`Viewing version from ${new Date(timestamp).toLocaleTimeString()}`, 'info', 2000);
+            }
+
            function openVeryCheckModal(result) {
                const modal = document.getElementById('verycheck-modal');
                const content = document.getElementById('verycheck-modal-content');
@@ -1304,6 +1477,11 @@
                 document.getElementById('verycheck-progress-message').textContent = message;
                 const progressBar = document.getElementById('verycheck-progress-bar');
                 progressBar.style.width = progress + '%';
+            }
+
+            function closeAiModal() {
+                const modal = document.getElementById('ai-modal');
+                modal.classList.remove('visible');
             }
         </script>
     </body>
