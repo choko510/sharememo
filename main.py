@@ -14,6 +14,8 @@ from sqlalchemy import create_engine, Column, String, Text, Integer
 from sqlalchemy.orm import declarative_base, sessionmaker
 from pydantic import BaseModel, field_validator
 from openai import OpenAI
+import loro
+import base64
 
 load_dotenv()
 
@@ -169,9 +171,15 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
         db = SessionLocal()
         memo = db.query(Memo).filter(Memo.id == memo_id).first()
         if memo:
+            snapshot = b''
+            if memo.content:
+                # In the new architecture, memo.content is a binary snapshot
+                snapshot = bytes(memo.content)
+
             await websocket.send_json({
                 "type": "init",
-                "content": memo.content,
+                "snapshot": base64.b64encode(snapshot).decode('utf-8'),
+                "comments": [], # TODO: Integrate comments with Loro or handle separately
                 "myid": user_id,
             })
         else:
@@ -185,16 +193,26 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
             data = await websocket.receive_text()
             message = json.loads(data)
 
-            if message["type"] == "content":
-                db = SessionLocal()
-                memo = db.query(Memo).filter(Memo.id == memo_id).first()
-                if memo:
-                    memo.content = message["content"]
-                    memo.updated_at = int(time.time())
-                    db.commit()
-                    await manager.broadcast(data, memo_id, user_id)
-                db.close()
+            if message["type"] == "op":
+                # The server just needs to relay the op and persist the new state.
+                await manager.broadcast(data, memo_id, user_id)
 
+                db = SessionLocal()
+                try:
+                    memo = db.query(Memo).filter(Memo.id == memo_id).first()
+                    if memo:
+                        server_doc = loro.LoroDoc()
+                        if memo.content and len(memo.content) > 0:
+                            server_doc.import_snapshot(bytes(memo.content))
+
+                        op = base64.b64decode(message["op"])
+                        server_doc.import_updates(op)
+
+                        memo.content = server_doc.export_snapshot()
+                        memo.updated_at = int(time.time())
+                        db.commit()
+                finally:
+                    db.close()
             elif message["type"] == "cursor":
                 db = SessionLocal()
                 memo = db.query(Memo).filter(Memo.id == memo_id).first()
@@ -221,86 +239,142 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
 
             elif message["type"] == "ai":
                 db = SessionLocal()
-                memo = db.query(Memo).filter(Memo.id == memo_id).first()
-                if memo:
-                    if message["status"] == "gen":
-                        memo_content = memo.content
-                        await manager.broadcast(json.dumps({
-                                "type": "ai",
-                                "status": "stop",
-                                "name":user_id
-                            }), memo_id, user_id)
-                        if message["req"] == "rewrite":
-                            input_text = f'''
-                            #命令
-                                文章を校正してください。
-                                誤字脱字や不自然な表現も修正してください。
-                            #制約条件
-                                元の文章の意図や構造を保ったまま修正してください。
-                                大きく改行の位置関係を変更しないでください。
-                                出力形式は、添削後の文章のみとしてください。
-                                修正文章に含まれるHTMLタグは、基本的にそのまま残してください。ただし、明確に不要な場合のみ削除してください。
-                                改行は必ず<br>タグを使用してください。
-                                変更点がない場合は対象の文章を含まずに、"nochange"とだけ出力して下さい。
-                                "nochange"と出力する場合は、何も他のいかなる文字も含めないで下さい。
-                            #修正対象文章
-                                {memo_content}
-                            '''
-                        elif message["req"] == "makeword":
-                            input_text = f'''
-                            #命令
-                                1.2倍程度に文章の量を増やして下さい。
-                            #制約条件
-                                元の文章の意図や構造を保ったまま増やしてください。
-                                できるかぎり自然な風に増やしてください。
-                                大きく改行の位置関係を変更しないでください。
-                                出力形式は、増やした後の文章のみとしてください。
-                                修正文章に含まれるHTMLタグは、基本的にそのまま残してください。ただし、明確に不要な場合のみ削除してください。
-                                改行は必ず<br>タグを使用してください。
-                                変更点がない場合は対象の文章を含まずに、"nochange"とだけ出力して下さい。
-                                "nochange"と出力する場合は、何も他のいかなる文字も含めないで下さい。
-                            #対象文章
-                                {memo_content}
-                            '''
-                        elif message["req"] == "continued":
-                            input_text = f'''
-                            #命令
-                                文章が途切れている所から、自然な風に続きを書いて下さい。
-                            #制約条件
-                                元の文章の意図や構造を保ったまま続きを書いてください。
-                                大きく改行の位置関係を変更しないでください。
-                                元の文章は絶対に変更しないで下さい。
-                                出力形式は、続きの文章のみを出力してください。
-                                修正文章に含まれるHTMLタグは、基本的にそのまま残してください。ただし、明確に不要な場合のみ削除してください。
-                                改行は必ず<br>タグを使用してください。
-                            #対象文章
-                                {memo_content}
-                            '''
-                        else:
-                            await manager.broadcast(json.dumps({
-                                "type": "ai",
-                                "status": "failure",
-                            }), memo_id, None)
-                        try:
-                            model = genai.GenerativeModel("gemini-1.5-flash")
-                            response = await asyncio.to_thread(
-                                model.generate_content,
-                                contents=input_text
-                            )
-                            
-                            response_text = ""
-                            try:
-                                response_text = response.text
-                            except ValueError:
-                                response_text = "nochange"
+                try:
+                    memo = db.query(Memo).filter(Memo.id == memo_id).first()
+                    if memo:
+                        if message["status"] == "gen":
+                            memo_content = memo.content
+                            char_count = message.get("char_count")
+                            cursor_pos = message.get("cursor_pos", -1)
 
-                            if response_text == "nochange" or input_text == response_text:
+                            await manager.broadcast(json.dumps({
+                                    "type": "ai",
+                                    "status": "stop",
+                                    "name":user_id
+                                }), memo_id, user_id)
+
+                            char_constraint = ""
+                            if char_count:
+                                char_constraint = f"生成する文字数は{char_count}文字程度にしてください。"
+
+                            if message["req"] == "rewrite":
+                                input_text = f'''
+                                #命令
+                                    文章を校正してください。
+                                    誤字脱字や不自然な表現も修正してください。
+                                #制約条件
+                                    元の文章の意図や構造を保ったまま修正してください。
+                                    大きく改行の位置関係を変更しないでください。
+                                    出力形式は、添削後の文章のみとしてください。
+                                    修正文章に含まれるHTMLタグは、基本的にそのまま残してください。ただし、明確に不要な場合のみ削除してください。
+                                    改行は必ず<br>タグを使用してください。
+                                    変更点がない場合は対象の文章を含まずに、"nochange"とだけ出力して下さい。
+                                    "nochange"と出力する場合は、何も他のいかなる文字も含めないで下さい。
+                                #修正対象文章
+                                    {memo_content}
+                                '''
+                            elif message["req"] == "makeword":
+                                input_text = f'''
+                                #命令
+                                    文章の量を増やして下さい。{char_constraint}
+                                #制約条件
+                                    元の文章の意図や構造を保ったまま増やしてください。
+                                    できるかぎり自然な風に増やしてください。
+                                    大きく改行の位置関係を変更しないでください。
+                                    出力形式は、増やした後の文章のみとしてください。
+                                    修正文章に含まれるHTMLタグは、基本的にそのまま残してください。ただし、明確に不要な場合のみ削除してください。
+                                    改行は必ず<br>タグを使用してください。
+                                    変更点がない場合は対象の文章を含まずに、"nochange"とだけ出力して下さい。
+                                    "nochange"と出力する場合は、何も他のいかなる文字も含めないで下さい。
+                                #対象文章
+                                    {memo_content}
+                                '''
+                            elif message["req"] == "continued":
+                                before_cursor = memo_content
+                                after_cursor = ""
+                                instruction = "以下の文章の続きを自然な形で生成してください。"
+                                if cursor_pos != -1 and cursor_pos <= len(memo_content):
+                                    before_cursor = memo_content[:cursor_pos]
+                                    after_cursor = memo_content[cursor_pos:]
+                                    instruction = "以下の「文章1」と「文章2」の間に入る自然な文章を生成してください。"
+
+                                input_text = f'''
+                                # 命令
+                                {instruction} {char_constraint}
+
+                                # 制約条件
+                                - 元の文章の意図や構造を完全に維持してください。
+                                - 「文章1」と「文章2」のテキストは絶対に変更しないでください。
+                                - 出力は、生成された文章のみにしてください。余計な説明や前置きは不要です。
+                                - 生成する文章には、HTMLタグを適切に使用してください（例: 改行には`<br>`）。
+
+                                # 文章1
+                                ```html
+                                {before_cursor}
+                                ```
+
+                                # 文章2
+                                ```html
+                                {after_cursor}
+                                ```
+                                '''
+
+                            elif message["req"] == "summarize":
+                                input_text = f'''
+                                #命令
+                                    以下の文章を要約してください。
+                                #制約条件
+                                    出力形式は、要約後の文章のみとしてください。
+                                    HTMLタグは無視してください。
+                                #対象文章
+                                    {memo_content}
+                                '''
+                            else:
                                 await manager.broadcast(json.dumps({
                                     "type": "ai",
-                                    "status": "nochange",
+                                    "status": "failure",
                                 }), memo_id, None)
-                            if message["req"] == "continued":
-                                new_content = memo_content + response_text
+                                return
+
+                            try:
+                                model = genai.GenerativeModel("gemini-1.5-flash")
+                                response = await asyncio.to_thread(
+                                    model.generate_content,
+                                    contents=input_text
+                                )
+
+                                response_text = ""
+                                try:
+                                    response_text = response.text
+                                except ValueError:
+                                    response_text = "nochange"
+
+                                if response_text == "nochange" or response_text == "":
+                                    await manager.broadcast(json.dumps({
+                                        "type": "ai",
+                                        "status": "nochange",
+                                    }), memo_id, None)
+                                    return
+
+                                if message["req"] == "summarize":
+                                    await websocket.send_json({
+                                        "type": "ai",
+                                        "status": "success",
+                                        "content": response_text
+                                    })
+                                    await manager.broadcast(json.dumps({ "type": "ai", "status": "accept" }), memo_id, None)
+                                    return
+
+                                if message["req"] == "continued":
+                                    if cursor_pos != -1 and cursor_pos <= len(memo_content):
+                                        before_cursor = memo_content[:cursor_pos]
+                                        after_cursor = memo_content[cursor_pos:]
+                                        new_content = before_cursor + response_text + after_cursor
+                                    else:
+                                        new_content = memo_content + response_text
+                                else:
+                                    new_content = response_text
+
                                 memo.content = new_content
                                 memo.updated_at = int(time.time())
                                 db.commit()
@@ -309,30 +383,24 @@ async def websocket_endpoint(websocket: WebSocket, memo_id: str):
                                     "status": "success",
                                     "content": new_content
                                 }), memo_id, None)
-                            else:
-                                memo.content = response_text
-                                memo.updated_at = int(time.time())
-                                db.commit()
+                            except Exception as e:
+                                print(f"AI generation failed: {e}")
                                 await manager.broadcast(json.dumps({
                                     "type": "ai",
-                                    "status": "success",
-                                    "content": response_text
+                                    "status": "failure",
                                 }), memo_id, None)
-                        except:
+                        elif message["status"] == "accept":
                             await manager.broadcast(json.dumps({
                                 "type": "ai",
-                                "status": "failure",
-                            }), memo_id, None)
-                    elif message["status"] == "accept":
-                        await manager.broadcast(json.dumps({
-                            "type": "ai",
-                            "status": "accept",
-                        }), memo_id, user_id)
-                    elif message["status"] == "cancel":
-                        await manager.broadcast(json.dumps({
-                            "type": "ai",
-                            "status": "cancel",
-                        }), memo_id, user_id)
+                                "status": "accept",
+                            }), memo_id, user_id)
+                        elif message["status"] == "cancel":
+                            await manager.broadcast(json.dumps({
+                                "type": "ai",
+                                "status": "cancel",
+                            }), memo_id, user_id)
+                finally:
+                    db.close()
 
             elif message["type"] == "spellcheck":
 
